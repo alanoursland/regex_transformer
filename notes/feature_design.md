@@ -3,23 +3,242 @@
 ## 1. Goals
 
 ### 1.1 Phase 1 Objectives
-- Build regex/FSM system
-- Generate training data from FSM
-- Train transformer model on regex patterns
-- Verify model can learn the task
-- Establish baseline performance
+
+The primary goal of Phase 1 is to **build working infrastructure and validate that the approach works**. We need a complete end-to-end system before we can do interpretability analysis.
+
+#### Core Deliverables
+
+**1. Regex/FSM System**:
+- Build a system that can parse regex patterns into minimal finite state machines
+- FSM must support both recognition (classify strings) and generation (produce valid strings)
+- Need complete FSM operations: state tracing, transition enumeration, serialization
+- Must work correctly and reliably - this is foundational for everything else
+
+**2. Data Generation Pipeline**:
+- Generate labeled training data from FSMs
+- Each training example has:
+  - Input string (character sequence)
+  - Next-token labels (what character comes next at each position)
+  - State-class labels (what state class we're in at each position)
+- Ensure good coverage of FSM states and transitions
+- Support train/validation/test splits with reproducible seeding
+
+**3. Transformer Model**:
+- Implement single-layer transformer with dual prediction heads:
+  - Next token prediction (character-level language model)
+  - State classification (predict FSM state class)
+- Character-level tokenization (one token = one character)
+- Configurable architecture (embedding dim, number of attention heads, etc.)
+- Instrumentation to extract attention weights and activations (for future analysis)
+
+**4. Training Pipeline**:
+- Multi-task training (next-token + state-class losses)
+- Standard training loop with checkpointing
+- Metrics tracking: accuracy for both tasks, per-class performance
+- Save trained models and training logs
+
+**5. Experimental Framework**:
+- Define experiments in Python code (not config files)
+- Each experiment: regex definition → FSM → data → trained model → metrics
+- Organized results directory structure
+- Reproducible experiments with seed control
+
+#### Success Criteria
+
+**Primary Success**: Model achieves high accuracy on both tasks
+- Next-token prediction accuracy > 95% on test set
+- State-class prediction accuracy > 95% on test set
+- Model actually learns the pattern, not memorizing
+
+**Starting Simple**:
+- Begin with simplest patterns: `a*`, `a*b*`, `a+b+`
+- Small alphabets: 2-3 characters
+- Short sequences: 10-20 characters
+- Prove it works on simple cases before scaling up
+
+**Validation**:
+- Model can overfit a tiny dataset (sanity check)
+- Model generalizes to held-out test data
+- Predictions make sense (not random)
+- FSM correctly implements the regex (test against known examples)
+
+#### What This Phase Accomplishes
+
+By the end of Phase 1, we will have:
+- A working regex → FSM → training data → trained model pipeline
+- Evidence that transformers CAN learn finite state machines (at least simple ones)
+- Infrastructure to run experiments systematically
+- Baseline performance numbers
+- Trained models ready for interpretability analysis in Phase 2
+
+This is **infrastructure building**, not research. We're setting up the testbed.
+
+---
 
 ### 1.2 Capacity Experiments
-- Test model learning with minimal capacity (below theoretical requirements)
-- Test model learning with excess capacity
-- Understand relationship between FSM complexity and model requirements
-- Inform model sizing heuristics
+
+Once we have a working system, we want to understand **how much model capacity is actually required** to learn FSMs of different sizes.
+
+#### Research Question
+
+Given an FSM with:
+- |Q| states
+- |Σ| alphabet size
+- |δ| transitions
+
+What are the minimum transformer parameters (embedding dimension, number of heads) needed for the model to learn it successfully?
+
+#### Why This Matters
+
+**Theoretical Insight**:
+- Does capacity scale linearly with FSM size? Logarithmically? Something else?
+- Is there a minimum threshold below which learning fails?
+- How much excess capacity helps (or hurts)?
+
+**Practical Value**:
+- Informs model sizing for future experiments
+- Tests whether our capacity heuristics are correct
+- Reveals if model is learning efficiently or wastefully
+
+**Interpretability Preparation**:
+- Undersized models might learn cleaner, more compressed representations
+- Oversized models might spread information across many dimensions
+- Understanding capacity helps us know where to look for learned structure
+
+#### Experimental Design
+
+For each regex pattern (e.g., `a*b*` with 3 states):
+
+**1. Undersized Models**:
+- Embedding dimension < |Q| (not enough dimensions to represent all states)
+- Very few attention heads (1-2)
+- **Question**: Does it still learn? How does performance degrade?
+- **Hypothesis**: Might fail or learn approximate solutions
+
+**2. Properly-Sized Models**:
+- Embedding dimension ≈ |Q| or slightly larger
+- Attention heads based on transition structure (4-8)
+- **Question**: What's the minimum that achieves high accuracy?
+- **Hypothesis**: Should learn successfully with appropriate capacity
+
+**3. Oversized Models**:
+- Embedding dimension >> |Q| (many extra dimensions)
+- Many attention heads (8-16)
+- **Question**: Does extra capacity improve learning or just add noise?
+- **Hypothesis**: Might learn faster but representations could be diffuse
+
+#### Metrics
+
+For each capacity configuration, measure:
+- Training convergence speed (epochs to reach 95% accuracy)
+- Final test accuracy (next-token and state-class)
+- Model size (number of parameters)
+- Whether model converges at all
+
+**Capacity vs Performance Curves**:
+- Plot test accuracy vs embedding dimension
+- Identify minimum viable capacity
+- Identify saturation point (where more capacity doesn't help)
+
+#### Expected Outcomes
+
+**Best Case**: Clear relationship between FSM complexity and required capacity
+- Can derive formula: `embedding_dim = f(|Q|, |Σ|)`
+- Minimum threshold is predictable
+- Excess capacity has diminishing returns
+
+**Worst Case**: Highly variable, no clear pattern
+- Required capacity depends on unpredictable factors
+- Need to over-provision to be safe
+- Still valuable to know this!
+
+**Most Likely**: Somewhere in between
+- Rough heuristics work most of the time
+- Some patterns are easier/harder than expected
+- Enough data to make educated guesses
+
+#### Value Proposition
+
+Even if we don't get clean theoretical results, capacity experiments tell us:
+- Whether the model is learning efficiently
+- How much headroom we need for reliable learning
+- If our architecture choices make sense
+- What to expect as we scale to more complex patterns
+
+This grounds our interpretability work: we'll know if we're looking at a model that's barely fitting the data vs. one with lots of spare capacity.
+
+---
 
 ### 1.3 Future Work (Out of Scope for Phase 1)
-- Interpretability analysis
-- FSM extraction
-- Attention pattern analysis
-- *(Deferred until we have working trained models)*
+
+Phase 1 is about **building and validating**. Phase 2 is about **understanding**.
+
+#### Deferred to Phase 2: Interpretability Analysis
+
+Once we have trained models from Phase 1, we can analyze what they learned:
+
+**Attention Analysis**:
+- Do attention patterns correlate with FSM state transitions?
+- Can we identify which attention heads track which types of transitions?
+- Does attention create a graph structure matching the FSM?
+
+**Activation Analysis**:
+- Do MLP activations encode FSM states?
+- Can we decode "current state" from hidden representations?
+- Are states linearly separable in embedding space?
+
+**Correspondence Finding**:
+- Map learned representations to ground-truth FSM structure
+- Identify which model components correspond to which FSM components
+- Measure how closely the learned structure matches the true structure
+
+**Structure Extraction**:
+- Can we extract an explicit FSM from the learned weights?
+- How accurate is the extracted FSM compared to ground truth?
+- Can we compile the learned model into a symbolic program?
+
+#### Why Wait?
+
+**Need Working Models First**:
+- Can't analyze what doesn't exist yet
+- Need to confirm models actually learn before asking how they learn
+- Avoid premature optimization / analysis
+
+**Infrastructure Comes First**:
+- Analysis tools need working FSMs and trained models to operate on
+- Visualization and comparison tools depend on complete pipeline
+- Get the basics right before diving deep
+
+**Iterative Process**:
+- First build it, then study it
+- Analysis will reveal what to build next
+- Don't guess what analysis we'll need - let the data tell us
+
+#### Explicit Non-Goals for Phase 1
+
+**Do NOT**:
+- Build FSM extraction algorithms (we don't know how yet)
+- Implement attention visualization dashboards (overkill for now)
+- Try to prove theoretical claims about transformers (need data first)
+- Optimize for performance or scale (keep it simple)
+- Support complex regex features (start minimal)
+
+**Do Instead**:
+- Focus on correctness and clarity
+- Build with analysis in mind (instrumentation hooks)
+- Keep it simple and modifiable
+- Document everything
+- Make it work, make it right, THEN make it fast/fancy
+
+#### The Path Forward
+
+Phase 1 deliverable: **Working system that proves transformers can learn FSMs**
+
+Phase 2 question: **HOW do transformers learn FSMs? Can we extract the learned structure?**
+
+We're doing research, which means we don't know Phase 2's answers yet. That's fine. Phase 1 gives us the tools to find those answers.
+
+**First make it exist, then make it interpretable.**
 
 ## 2. Regex/FSM
 
