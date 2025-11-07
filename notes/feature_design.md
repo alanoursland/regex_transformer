@@ -1450,6 +1450,174 @@ def auto_size_model(fsm, multiplier=2, num_heads=4):
 
 ## 5. Symbolic Transformer Analogue
 
+### 5.1 Purpose
+
+Before training any learned transformer, we construct a symbolic analogue that executes the FSM using the same computational structure that a transformer block employs.
+
+This evaluator acts as:
+- A reference model for what the learned transformer is expected to discover
+- A verifiable, interpretable system for checking how attention, aggregation, and value propagation can encode FSM state transitions
+
+Where the FSM defines discrete transitions δ(q, a) → q', the symbolic analogue defines an equivalent set of attention, key, query, and value operations that compute the same results in one parallel pass.
+
+---
+
+### 5.2 Conceptual Overview
+
+**Traditional FSM evaluation is sequential**:
+```
+q_t = δ(q_{t-1}, x_t)
+```
+
+**The transformer performs parallel, differentiable message-passing** across all token positions using self-attention:
+```
+H' = softmax((QK^T / √d_k) + M_causal) V
+```
+
+The symbolic analogue replaces the learned weights W_Q, W_K, W_V with structures derived directly from δ.
+
+It reproduces the FSM's transition semantics through deterministic attention and value propagation — effectively **"compiling" the FSM into transformer form**.
+
+---
+
+### 5.3 Construction
+
+#### Inputs
+- Finite-state machine M = (Q, Σ, δ, q₀, C)
+- Input token sequence x₁, ..., x_T
+
+#### Derived components
+1. **States** → one-hot basis e_q ∈ ℝ^|Q|
+2. **Tokens** → one-hot basis e_a ∈ ℝ^|Σ|
+3. **Transition function δ** → defines valid triples (q, a, q')
+
+---
+
+### 5.4 Symbolic Q, K, V Definitions
+
+We define query, key, and value tables so that the attention mechanism exactly enforces δ:
+
+**Keys: represent current FSM state**
+```
+K[q] = e_q
+```
+
+**Queries: represent token-conditioned state matches**
+```
+Q[a,q] = {
+  1  if δ(q,a) defined
+  0  otherwise
+}
+```
+⇒ A query for token a "attends" only to keys for predecessor states that can transition under a.
+
+**Values: encode next-state embeddings**
+```
+V[a,q] = e_{δ(q,a)}
+```
+
+Each token x_i = a retrieves a weighted combination of values from previous positions j < i whose states q_j satisfy δ.
+
+---
+
+### 5.5 Symbolic Attention Operation
+
+For each position i:
+```
+A_{ij} = {
+  1  if δ(q_j, x_i) is defined and j < i
+  0  otherwise
+}
+```
+
+Then the symbolic "attention update" is:
+```
+h_i = Σ_{j<i} A_{ij} V[x_i, q_j]
+```
+
+Since δ is deterministic, each row of A is effectively one-hot:
+```
+h_i = e_{δ(q_{i-1}, x_i)}
+```
+
+This reproduces FSM execution exactly, but through the same linear algebraic mechanism that a transformer would use — **parallel, batched, and matrix-based**.
+
+---
+
+### 5.6 Multi-Head Analogue (Optional)
+
+To emulate a multi-head transformer, δ can be partitioned into edge subsets:
+```
+E_h ⊆ {(q,a,q')}
+```
+
+Each head h defines its own Q_h, K_h, V_h from E_h.
+
+**Heads may specialize for**:
+- Self-loops / stay transitions
+- Class-changing transitions
+- Long-range or reset edges
+
+The outputs from all heads are concatenated and linearly projected, mirroring the learned transformer block.
+
+---
+
+### 5.7 Evaluation Characteristics
+
+- **One-pass computation**: Builds all transitions for a sequence in a single matrix operation (no iteration)
+- **Exact execution**: Reproduces the FSM's δ transitions without error
+- **Interpretability**: Every attention edge corresponds to a valid FSM transition
+- **Benchmark for learning**: Serves as the ground-truth pattern that the trained transformer is hypothesized to approximate
+
+---
+
+### 5.8 Implementation Sketch
+
+```python
+def build_symbolic_qkv(fsm):
+    """Construct symbolic Q, K, V matrices from FSM"""
+    Q = np.zeros((len(fsm.alphabet), len(fsm.states)))
+    V = np.zeros((len(fsm.alphabet), len(fsm.states), len(fsm.states)))
+
+    for a_idx, a in enumerate(fsm.alphabet):
+        for q_idx, q in enumerate(fsm.states):
+            if (q, a) in fsm.delta:
+                q_next = fsm.delta[(q, a)]
+                Q[a_idx, q_idx] = 1
+                V[a_idx, q_idx, q_next] = 1
+
+    K = np.eye(len(fsm.states))
+    return Q, K, V
+
+def symbolic_attention_step(Q, K, V, seq_tokens, init_state):
+    """Execute FSM using symbolic attention"""
+    states = [init_state]
+    for a in seq_tokens:
+        q_prev = states[-1]
+        q_next = np.argmax(V[a, q_prev])
+        states.append(q_next)
+    return states
+```
+
+This symbolic attention layer provides the expected evaluation pattern that the real transformer should learn to approximate.
+
+---
+
+### 5.9 Role in Experiments
+
+The symbolic analogue is **not a trained model** — it's a diagnostic reference.
+
+It allows us to:
+- **Visualize** what an ideal attention pattern would look like
+- **Compare** learned attention matrices A_learned to the ideal A^symbolic
+- **Quantify convergence**: how closely does the learned transformer's attention or residual dynamics align with the symbolic evaluator's structure?
+
+**Usage in Phase 2 (Interpretability)**:
+- Generate ground-truth attention patterns for comparison
+- Compute correlation metrics between learned and symbolic attention
+- Identify which heads in the learned model correspond to which transition types
+- Test if the learned model is actually approximating the FSM or solving the task differently
+
 ## 6. Experimental Framework
 
 ### 6.1 Experiment Definition
