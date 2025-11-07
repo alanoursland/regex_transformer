@@ -1454,7 +1454,7 @@ def auto_size_model(fsm, multiplier=2, num_heads=4):
 
 Before training any learned transformer, we construct a **symbolic analogue** — an idealized reference model that formalizes how attention operations could represent FSM transitions if the transformer learned the FSM perfectly.
 
-**This is NOT an implementable transformer block.** It's an analytic surrogate that describes the mathematical structure of an idealized attention computation.
+**This is NOT an learned transformer block.** It's an analytic surrogate that describes the mathematical structure of an idealized attention computation. It is implementable directly from the FSM definition.
 
 This reference model acts as:
 - **A conceptual hypothesis**: What kind of computation would a transformer perform if its hidden states perfectly encoded FSM states?
