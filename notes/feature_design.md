@@ -1448,28 +1448,30 @@ def auto_size_model(fsm, multiplier=2, num_heads=4):
 - Seeded random generation
 - Deterministic data creation
 
-## 5. Experimental Framework
+## 5. Symbolic Transformer Analogue
 
-### 5.1 Experiment Definition
+## 6. Experimental Framework
+
+### 6.1 Experiment Definition
 - Define experiments in Python code (not JSON/YAML)
 - Direct value assignment, no translation overhead
 - Easy to create new experiments programmatically
 
-### 5.2 Experiment Components
+### 6.2 Experiment Components
 - Regex definition
 - Data generation parameters
 - Model architecture parameters
 - Training hyperparameters
 - Random seed
 
-### 5.3 Experiment Execution
+### 6.3 Experiment Execution
 1. Take regex definition → generate FSM
 2. Generate train/validation/test data from FSM
 3. Build and train transformer model
 4. Evaluate model performance
 5. Save all artifacts
 
-### 5.4 Results Organization
+### 6.4 Results Organization
 - Results go to `src/results/` (gitignored)
 - Organized by experiment name/ID
 - **Each experiment folder contains:**
@@ -1480,115 +1482,115 @@ def auto_size_model(fsm, multiplier=2, num_heads=4):
   - Evaluation metrics
   - Visualizations
 
-### 5.5 Experiment Configuration
+### 6.5 Experiment Configuration
 - Lightweight, research-grade approach
 - Easy to modify and iterate
 - No heavy frameworks
 - Clear parameter provenance
 
-## 6. Evaluation/Metrics/Visualization
+## 7. Evaluation/Metrics/Visualization
 
-### 6.1 Training Metrics
+### 7.1 Training Metrics
 - Loss (total, next-token component, state-class component)
 - Accuracy (next-token, state-class)
 - Per-class accuracy for state classification
 - Training curves over epochs
 
-### 6.2 Evaluation Metrics
+### 7.2 Evaluation Metrics
 - Test set accuracy (next-token, state-class)
 - Confusion matrix for state classification
 - Per-class performance breakdown
 - Comparison to baseline (random, simple heuristic)
 
-### 6.3 Capacity Analysis Metrics
+### 7.3 Capacity Analysis Metrics
 - Performance vs model size
 - Minimum capacity for convergence
 - Performance saturation point
 
-### 6.4 Visualizations
+### 7.4 Visualizations
 - Training/validation loss curves
 - Accuracy curves
 - Confusion matrices
 - FSM graph visualization
 - *(Future: attention heatmaps, activation visualizations)*
 
-### 6.5 Outputs
+### 7.5 Outputs
 - Plots saved to experiment results directory
 - Summary metrics in logs
 - Easy to compare across experiments
 
-## 7. Testing
+## 8. Testing
 
-### 7.1 What Needs Testing
+### 8.1 What Needs Testing
 
-#### 7.1.1 Regex/FSM Implementation
+#### 8.1.1 Regex/FSM Implementation
 - **Why:** Complex logic, easy to get wrong
 - **What:** State transitions, classification, generation
 - Unit tests for FSM operations
 - Validation against known regex semantics
 
-#### 7.1.2 Experimental Framework
+#### 8.1.2 Experimental Framework
 - **Why:** Ensure reproducibility and correctness
 - **What:** Data generation, experiment execution, results saving
 - Integration tests for end-to-end workflow
 
-#### 7.1.3 Metrics/Visualization (if custom)
+#### 8.1.3 Metrics/Visualization (if custom)
 - **Why:** Ensure accurate measurement
 - **What:** Metric calculations, plot generation
 - Unit tests for metric computation
 
-### 7.2 What Doesn't Need Testing
+### 8.2 What Doesn't Need Testing
 
-#### 7.2.1 Transformer Model
+#### 8.2.1 Transformer Model
 - Standard PyTorch implementation
 - Trust PyTorch primitives
 - Validate through training, not unit tests
 
-### 7.3 Testing Approach
+### 8.3 Testing Approach
 - Unit tests for core logic
 - Sanity checks (can model overfit tiny dataset?)
 - End-to-end validation on simple regex
 - Research-grade testing (not production-grade)
 
-## 8. Code Guidelines
+## 9. Code Guidelines
 
-### 8.1 Core Principles
+### 9.1 Core Principles
 - **PyTorch-based:** Use PyTorch for all neural network components
 - **Low overhead:** Minimal abstractions, direct implementations
 - **Research-grade code:** Readable, modifiable, not production-hardened
 - **Early failure preference:** Don't hide errors, fail fast and loud
 - **Minimal dependencies:** Standard library + PyTorch + minimal extras
 
-### 8.2 Dependencies
+### 9.2 Dependencies
 - **Required:** PyTorch, Python standard library
 - **Optional:** matplotlib (plots), networkx/graphviz (FSM viz), numpy (if needed)
 - **Forbidden:** Heavy frameworks, experiment tracking services, transformers library
 
-### 8.3 Code Organization
+### 9.3 Code Organization
 - Clear module structure
 - Self-contained components
 - Easy to understand and modify
 - Avoid over-engineering
 
-### 8.4 Configuration
+### 9.4 Configuration
 - Experiments defined in code, not config files
 - Direct Python objects
 - No config parsers or translators
 - Easy to version control and diff
 
-### 8.5 Error Handling
+### 9.5 Error Handling
 - Validate inputs aggressively
 - Assert assumptions explicitly
 - Clear error messages
 - Fail rather than silently produce wrong results
 
-### 8.6 Documentation
+### 9.6 Documentation
 - Docstrings for public APIs
 - Comments for non-obvious logic
 - README for setup and usage
 - Research-appropriate level of documentation
 
-## 9. Non-Features / Out of Scope
+## 10. Non-Features / Out of Scope
 
 - Multi-layer transformers (start with 1 layer)
 - Complex regex features (backreferences, lookahead/lookbehind)
