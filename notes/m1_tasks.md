@@ -1,0 +1,1 @@
+Write a list of tasks for milestone 1 as described in milestone_planning.md. Put checkboxes you can fill in as we complete the work.
