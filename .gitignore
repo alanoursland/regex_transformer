@@ -1,0 +1,67 @@
+# ----------------------------
+# General OS / Editor clutter
+# ----------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.bak
+*.log
+~*
+
+# ----------------------------
+# Python build / environment files
+# ----------------------------
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ----------------------------
+# Jupyter and notebook checkpoints
+# ----------------------------
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ----------------------------
+# PyTorch / ML outputs
+# ----------------------------
+# Ignore the results directory (for large output files, models, logs)
+src/results/
+
+# Common output types
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.npy
+*.npz
+*.h5
+
+# ----------------------------
+# Logs, cache, and temp data
+# ----------------------------
+logs/
+*.log
+cache/
+tmp/
+temp/
+
+# ----------------------------
+# IDE / Editor configs
+# ----------------------------
+.vscode/
+.idea/
+*.code-workspace
