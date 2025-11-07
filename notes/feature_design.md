@@ -1448,17 +1448,20 @@ def auto_size_model(fsm, multiplier=2, num_heads=4):
 - Seeded random generation
 - Deterministic data creation
 
-## 5. Symbolic Transformer Analogue
+## 5. Symbolic Transformer Analogue (Idealized Reference Model)
 
 ### 5.1 Purpose
 
-Before training any learned transformer, we construct a symbolic analogue that executes the FSM using the same computational structure that a transformer block employs.
+Before training any learned transformer, we construct a **symbolic analogue** — an idealized reference model that formalizes how attention operations could represent FSM transitions if the transformer learned the FSM perfectly.
 
-This evaluator acts as:
-- A reference model for what the learned transformer is expected to discover
-- A verifiable, interpretable system for checking how attention, aggregation, and value propagation can encode FSM state transitions
+**This is NOT an implementable transformer block.** It's an analytic surrogate that describes the mathematical structure of an idealized attention computation.
 
-Where the FSM defines discrete transitions δ(q, a) → q', the symbolic analogue defines an equivalent set of attention, key, query, and value operations that compute the same results in one parallel pass.
+This reference model acts as:
+- **A conceptual hypothesis**: What kind of computation would a transformer perform if its hidden states perfectly encoded FSM states?
+- **A diagnostic tool**: Ground-truth attention patterns for comparing to learned attention matrices
+- **An interpretability guide**: Expected structure that trained models might converge toward
+
+Where the FSM defines discrete transitions δ(q, a) → q', the symbolic analogue describes what Q, K, V structures would reproduce those transitions through attention, assuming perfect state representation.
 
 ---
 
@@ -1474,9 +1477,16 @@ q_t = δ(q_{t-1}, x_t)
 H' = softmax((QK^T / √d_k) + M_causal) V
 ```
 
-The symbolic analogue replaces the learned weights W_Q, W_K, W_V with structures derived directly from δ.
+The symbolic analogue asks: "If we could design Q, K, V matrices directly from δ, what would they look like?"
 
-It reproduces the FSM's transition semantics through deterministic attention and value propagation — effectively **"compiling" the FSM into transformer form**.
+It describes the mathematical structure of attention operations that would reproduce δ's semantics — effectively **"compiling" the FSM into transformer form**.
+
+**Important**: This is not a faithful reconstruction of transformer data flow. In a real transformer:
+- Q_i = W_Q h_i depends only on the current position's hidden state
+- K_j = W_K h_j depends only on another position's hidden state
+- The hidden states h themselves emerge from learned embeddings and attention
+
+The symbolic analogue abstracts away this complexity by assuming we already know the FSM state at each position. It describes the **ideal fixed point** that training could converge to, not the mechanism of convergence itself.
 
 ---
 
@@ -1518,6 +1528,8 @@ V[a,q] = e_{δ(q,a)}
 
 Each token x_i = a retrieves a weighted combination of values from previous positions j < i whose states q_j satisfy δ.
 
+**Note on abstraction**: The formulation Q[a,q] intentionally bakes in both the current token (a) and the previous state (q) into the query structure. In a real transformer, Q_i would depend only on h_i (the current position's representation), not directly on both token identity and prior state. This is an **intentional abstraction** that collapses the dependencies to describe the ideal matching rule: "position i (with token a) should attend to position j if δ(q_j, a) is defined." A faithful mechanistic account would require explaining how h_i encodes sufficient information about both x_i and the query pattern, which is what the learned transformer must discover through training.
+
 ---
 
 ### 5.5 Symbolic Attention Operation
@@ -1540,7 +1552,13 @@ Since δ is deterministic, each row of A is effectively one-hot:
 h_i = e_{δ(q_{i-1}, x_i)}
 ```
 
-This reproduces FSM execution exactly, but through the same linear algebraic mechanism that a transformer would use — **parallel, batched, and matrix-based**.
+**This describes a fixed point, not a forward pass**: The construction assumes we already know q_j at each position j to build the attention matrix A. But in a real transformer's causal forward pass, h_i depends on earlier hidden states through attention — there's a circularity here.
+
+What this formulation really describes is: **"If the transformer's internal representations perfectly encoded FSM states, then the attention patterns that preserve δ would look like this."**
+
+It's describing the **ideal attractor** that training could converge to, not the step-by-step mechanism of how the model reaches that attractor.
+
+**Algebraic form vs. computational parallelism**: When we say "parallel" or "one-pass", we mean the attention matrix A can be written in matrix form (mathematical simultaneity), not that it can be computed in a single forward pass without knowing the states. The symbolic analogue expresses FSM transitions as linear algebraic operations, which is the same mathematical framework transformers use — even though the learned transformer must discover this structure implicitly through gradient descent.
 
 ---
 
@@ -1564,10 +1582,10 @@ The outputs from all heads are concatenated and linearly projected, mirroring th
 
 ### 5.7 Evaluation Characteristics
 
-- **One-pass computation**: Builds all transitions for a sequence in a single matrix operation (no iteration)
-- **Exact execution**: Reproduces the FSM's δ transitions without error
-- **Interpretability**: Every attention edge corresponds to a valid FSM transition
-- **Benchmark for learning**: Serves as the ground-truth pattern that the trained transformer is hypothesized to approximate
+- **Matrix form (not computational parallelism)**: Expresses FSM transitions as attention matrices A, which can be written in algebraic form. "One-pass" means mathematical simultaneity (matrix operations), not that it can be computed in one forward pass without prior state knowledge.
+- **Exact execution**: Reproduces the FSM's δ transitions without error (assuming perfect state representations)
+- **Interpretability**: Every attention edge in A corresponds to a valid FSM transition δ(q,a) → q'
+- **Diagnostic reference**: Serves as the ground-truth pattern that the trained transformer is hypothesized to approximate. Used for comparison, not as an implementable model.
 
 ---
 
@@ -1590,7 +1608,7 @@ def build_symbolic_qkv(fsm):
     return Q, K, V
 
 def symbolic_attention_step(Q, K, V, seq_tokens, init_state):
-    """Execute FSM using symbolic attention"""
+    """Execute FSM using symbolic attention (sequential for clarity)"""
     states = [init_state]
     for a in seq_tokens:
         q_prev = states[-1]
@@ -1599,11 +1617,49 @@ def symbolic_attention_step(Q, K, V, seq_tokens, init_state):
     return states
 ```
 
+**Note**: The implementation above is **sequential** (iterating token by token) for clarity and simplicity. The **theory** is parallel/matrix-based: the full attention matrix A for a sequence can be constructed in matrix form. However, actually computing A requires knowing all states, which brings us back to the circularity mentioned in Section 5.5.
+
+In practice, for the diagnostic reference, we can:
+- Use the sequential implementation to trace FSM execution and generate ground-truth state sequences
+- Construct the ideal attention matrix A^symbolic post-hoc from those traces
+- Compare A^symbolic to learned attention matrices A^learned
+
 This symbolic attention layer provides the expected evaluation pattern that the real transformer should learn to approximate.
 
 ---
 
-### 5.9 Role in Experiments
+### 5.9 What's Abstracted Away
+
+The symbolic analogue deliberately omits several components present in a real transformer:
+
+**Token and Position Embeddings**:
+- Real transformers map discrete tokens to continuous embeddings: e(x_i) ∈ ℝ^d
+- Position information is added: h_i^(0) = e(x_i) + p_i
+- The symbolic analogue assumes identity mappings: tokens and states are already one-hot vectors
+- **Implication**: In the learned model, embeddings supply the continuous basis for Q/K/V projections that implicitly realize δ
+
+**Hidden State Evolution**:
+- Real transformers compute h_i through attention over previous hidden states
+- Each h_i is a mixture of information from earlier positions
+- The symbolic analogue assumes h_i = e_q (pure state encoding) is achieved
+- **Implication**: The learned model must discover how to encode FSM states in its continuous hidden representations
+
+**Residual Connections and Layer Normalization**:
+- Real transformers accumulate information via residuals: h^(l+1) = h^(l) + Attn(h^(l))
+- LayerNorm stabilizes training
+- The symbolic analogue describes only the attention operation itself
+- **Implication**: Analysis must account for how residuals and norms affect the learned FSM representation
+
+**Why abstract these away?**
+The symbolic analogue focuses on the core question: "Can attention operations encode FSM transitions?"
+
+The answer is: "Yes, if hidden states represent FSM states and Q/K/V are structured appropriately."
+
+The embeddings, residuals, and norms are important for **how the learned model achieves this**, but not for **whether it's possible** — which is what the symbolic analogue demonstrates.
+
+---
+
+### 5.10 Role in Experiments
 
 The symbolic analogue is **not a trained model** — it's a diagnostic reference.
 
@@ -1617,6 +1673,8 @@ It allows us to:
 - Compute correlation metrics between learned and symbolic attention
 - Identify which heads in the learned model correspond to which transition types
 - Test if the learned model is actually approximating the FSM or solving the task differently
+
+**Summary**: The symbolic analogue provides a theoretical target — the mathematical structure that a perfect FSM-implementing transformer would have. The learned transformer may converge toward this structure, approximate it loosely, or solve the task through an entirely different mechanism. Phase 2 analysis will reveal which scenario occurs.
 
 ## 6. Experimental Framework
 
