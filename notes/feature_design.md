@@ -798,37 +798,624 @@ Visual representations of FSMs for debugging and analysis.
 
 ## 3. Transformer Model
 
-### 3.1 Architecture
-- Single transformer block
-- Multi-head self-attention
-- MLP/feed-forward layer
-- Residual connections
-- LayerNorm
-- Position embeddings
+### 3.1 Architecture Overview
 
-### 3.2 Input/Output
-- **Input:** character sequences (token-level)
-- **Output heads:**
-  - Next token prediction (vocab_size logits)
-  - State classification (num_classes logits)
-  - State class prediction does NOT include next token in context
+Single-layer transformer with character-level tokenization and multiple prediction heads.
 
-### 3.3 Vocabulary
-- Character-level tokens
-- One character = one token
-- Special tokens: EOS, possibly PAD
+**High-level structure**:
+```
+Input Tokens (+ optional Goal)
+    ↓
+Token Embedding (factorized with sparsity)
+    ↓
+Position Embedding (learned)
+    ↓
+Transformer Block:
+    - Multi-head Self-Attention (causal mask)
+    - MLP/Feed-forward
+    - Residual connections
+    - LayerNorm
+    ↓
+Three Output Heads:
+    - Next Token (vocab_size logits)
+    - Current Class (num_classes logits)
+    - FSM State (|Q| logits)
+```
 
-### 3.4 Model Sizing
-- Embedding dimension informed by FSM properties
-- Number of attention heads informed by FSM complexity
-- Configurable, not hardcoded
-- Support for capacity experiments (undersized/oversized models)
+**Why single layer?**
+- Maximum interpretability
+- Clear attribution of learned structure
+- Sufficient for finite state machines (hypothesis to test)
+- Can scale to multiple layers later if needed
 
-### 3.5 Instrumentation
-- Ability to extract attention weights
-- Ability to extract MLP activations
-- Ability to extract residual stream values
-- Support future interpretability analysis (but don't implement analysis yet)
+---
+
+### 3.2 Input Representation
+
+#### 3.2.1 Token Vocabulary
+
+**Vocabulary = Alphabet + Special Tokens**
+
+- **Alphabet characters**: All characters from FSM alphabet Σ
+- **Special tokens**:
+  - `<EOS>`: End of sequence (always included)
+  - `<PAD>`: Padding token (for batching variable-length sequences)
+  - `<GOAL>`: Goal class token (optional, for goal-conditioned experiments)
+
+**Vocabulary size**: `vocab_size = |Σ| + num_special_tokens`
+
+**Example**: For alphabet `{a, b}`:
+- Vocab = `[a, b, <EOS>, <PAD>]` → vocab_size = 4
+- With goal conditioning: vocab_size = 4 + num_classes (one goal token per class)
+
+#### 3.2.2 Token Embedding (Factorized with Sparsity)
+
+**Purpose**: Learn embeddings that encourage feature superposition and interpretability.
+
+**Architecture**:
+```
+Factorized embedding: E = U @ V
+
+where:
+  U ∈ ℝ^(vocab_size × k)  - token-to-feature matrix
+  V ∈ ℝ^(k × embedding_dim) - feature-to-embedding matrix
+  k - number of intermediate features (k << vocab_size typically)
+```
+
+**Token embedding process**:
+```python
+# For token t:
+e_t = U[t, :] @ V  # shape: (embedding_dim,)
+
+# U[t, :] is a k-dimensional feature vector
+# Each token is represented as a sparse combination of k features
+```
+
+**Sparsity regularization**:
+- Apply L1 penalty on U during training
+- Encourages each token to use only a few features
+- Creates interpretable feature sharing across tokens
+- Example: tokens that transition similarly might share features
+
+**Why factorized?**
+- **Standard embedding** (lookup table): Each token gets independent vector
+  - No explicit structure sharing
+  - Harder to interpret which tokens are "similar"
+
+- **Factorized embedding**: Tokens share a common feature space
+  - Token similarity emerges from shared features
+  - Sparsity makes it interpretable (which tokens use which features)
+  - Smaller parameter count when k < embedding_dim
+
+**Hyperparameters**:
+- `k`: Number of intermediate features (4-16 typical)
+- `l1_weight`: Strength of L1 penalty on U
+- Both configurable for experiments
+
+**Ablation variants** (for experiments):
+- **Variant A (default)**: Factorized U @ V with L1(U)
+- **Variant B (baseline)**: Standard lookup table (no factorization)
+- **Variant C (structured)**: Feature-coded embedding with hand-designed features
+
+#### 3.2.3 Position Embedding
+
+**Learned position embeddings** (default):
+```python
+pos_emb ∈ ℝ^(max_seq_length × embedding_dim)
+
+# For position i:
+p_i = pos_emb[i, :]  # shape: (embedding_dim,)
+```
+
+**Combined input**:
+```python
+# At position i with token t:
+input_i = token_emb[t] + pos_emb[i]
+```
+
+**Why learned?**
+- Simpler than sinusoidal for short sequences
+- Let model learn position representation
+- Easy to inspect what positions encode
+
+**Alternative (optional)**: Sinusoidal / RoPE
+- Can add rotary position embeddings (RoPE) as alternative
+- Test if position encoding method matters
+- Defer unless needed
+
+**Sequence length**:
+- `max_seq_length`: Maximum input sequence length
+- Configured based on FSM and data generation
+- Typical: 10-50 for simple patterns
+
+#### 3.2.4 Goal Conditioning (Optional)
+
+**Purpose**: Enable goal-directed generation ("generate string reaching class X")
+
+**Implementation**:
+```python
+# Option 1: Goal token at start (recommended)
+sequence = [<GOAL=accept>, 'a', 'a', 'b', 'b', <EOS>]
+
+# Goal token gets special embedding
+goal_emb = goal_token_embeddings[goal_class]
+
+# Option 2: FiLM conditioning (alternative)
+# Compute scale/shift from goal, apply to residual stream
+gamma, beta = goal_network(goal_embedding)
+h_conditioned = gamma * h + beta
+```
+
+**Default**: Goal token at position 0 (simplest)
+
+**When to use**:
+- Test if model can do goal-directed generation
+- Probe whether model learns class-conditional distributions
+- Compare goal-conditioned vs unconditional learning
+
+**Not required for basic experiments** - can start without it and add later.
+
+---
+
+### 3.3 Transformer Block
+
+Single transformer block with standard components.
+
+#### 3.3.1 Multi-Head Self-Attention
+
+**Purpose**: Learn relationships between positions in sequence
+
+**Architecture**:
+```python
+# For input sequence H ∈ ℝ^(seq_len × embedding_dim)
+
+# Per head h:
+Q_h = H @ W_Q_h  # Query
+K_h = H @ W_K_h  # Key
+V_h = H @ W_V_h  # Value
+
+# Attention scores with causal mask
+scores_h = (Q_h @ K_h.T) / sqrt(head_dim)
+scores_h = scores_h.masked_fill(causal_mask, -inf)
+attn_h = softmax(scores_h, dim=-1)
+
+# Attention output
+out_h = attn_h @ V_h
+
+# Concatenate all heads and project
+attn_out = concat([out_1, out_2, ..., out_H]) @ W_O
+```
+
+**Causal masking** (always applied):
+- Position i can only attend to positions ≤ i
+- Prevents information leakage from future tokens
+- Necessary for next-token prediction
+- Keeps all training objectives aligned
+
+**Why causal everywhere?**
+- Next-token prediction requires it
+- Even for classification, prevents "cheating" by looking ahead
+- Makes experiments comparable across objectives
+- Models reality (when generating, we don't know future)
+
+**Number of heads**: `num_heads`
+- Configurable based on FSM complexity
+- Must divide `embedding_dim` evenly
+- Typical: 4-8 heads for small FSMs
+- Each head can specialize on different transition types (hypothesis)
+
+**Head dimension**: `head_dim = embedding_dim / num_heads`
+
+#### 3.3.2 MLP / Feed-Forward Network
+
+**Purpose**: Nonlinear transformation after attention
+
+**Architecture**:
+```python
+# Standard transformer MLP
+mlp_out = MLP(layer_norm(attn_out))
+
+# MLP structure:
+def MLP(x):
+    h = Linear(embedding_dim → mlp_dim)(x)
+    h = activation(h)  # ReLU or GELU
+    h = Dropout(h)
+    h = Linear(mlp_dim → embedding_dim)(h)
+    return h
+```
+
+**MLP dimension**: `mlp_dim`
+- Typical: `mlp_dim = 4 * embedding_dim` (standard transformer)
+- Configurable for capacity experiments
+- Can test smaller/larger ratios
+
+**Activation**: ReLU or GELU (standard choices)
+
+#### 3.3.3 Residual Connections and LayerNorm
+
+**Standard transformer structure with pre-norm**:
+```python
+# Attention block
+h1 = x + Attention(LayerNorm(x))
+
+# MLP block
+h2 = h1 + MLP(LayerNorm(h1))
+
+# Final output
+output = h2
+```
+
+**Pre-norm vs post-norm**:
+- Use **pre-norm** (current standard)
+- More stable training
+- LayerNorm before each sub-block
+
+**Why this matters for interpretability**:
+- Residual stream accumulates information
+- Each layer adds to representation
+- Can decompose: `output = input + attn_contribution + mlp_contribution`
+- Useful for analysis in Phase 2
+
+---
+
+### 3.4 Output Heads
+
+Three separate prediction heads operating on the final hidden states.
+
+#### 3.4.1 Next Token Prediction Head
+
+**Purpose**: Predict the next character in the sequence
+
+**Architecture**:
+```python
+# For each position i, predict next token
+logits_next = Linear(embedding_dim → vocab_size)(h[i])
+
+# Prediction: argmax(logits_next)
+# Loss: CrossEntropy(logits_next, true_next_token[i])
+```
+
+**Output dimension**: `vocab_size` (alphabet + special tokens)
+
+**Target**: At position i, target is token at position i+1 (or `<EOS>` if at end)
+
+**Weight tying** (optional but recommended):
+```python
+# Tie output head weights to input embedding
+# Makes learning more efficient
+next_token_head.weight = token_embedding.weight.T
+```
+
+#### 3.4.2 Current Class Head
+
+**Purpose**: Predict the FSM state class at current position (before consuming next token)
+
+**Architecture**:
+```python
+# For each position i, predict current state class
+logits_class = Linear(embedding_dim → num_classes)(h[i])
+
+# Prediction: argmax(logits_class)
+# Loss: CrossEntropy(logits_class, true_class[i])
+```
+
+**Output dimension**: `num_classes` (number of distinct state classifications)
+
+**Target**: At position i, target is `C(state[i])` where `state[i]` is FSM state before consuming token i
+
+**Example**: For `"ab"` with FSM states `[q0, q0, q1]`:
+- Position 0: predict class of q0 (before seeing 'a')
+- Position 1: predict class of q0 (before seeing 'b')
+- Position 2: predict class of q1 (before seeing EOS)
+
+#### 3.4.3 FSM State Head
+
+**Purpose**: Predict the exact FSM state at current position (more fine-grained than class)
+
+**Architecture**:
+```python
+# For each position i, predict current FSM state
+logits_state = Linear(embedding_dim → num_states)(h[i])
+
+# Prediction: argmax(logits_state)
+# Loss: CrossEntropy(logits_state, true_state[i])
+```
+
+**Output dimension**: `|Q|` (number of FSM states)
+
+**Target**: At position i, target is state index (integer 0 to |Q|-1)
+
+**Relationship to class head**:
+- State prediction is more specific than class prediction
+- Multiple states can have same class
+- State → Class is a many-to-one mapping
+- If model learns states, it implicitly knows classes
+
+**Why both?**
+- State head: Tests if model learns full FSM structure
+- Class head: Tests if model learns high-level abstractions
+- Useful to compare: does model learn states or just classes?
+- Class may be easier to learn (fewer categories)
+
+---
+
+### 3.5 Training Modes
+
+**Multi-task learning** with configurable loss weights.
+
+#### 3.5.1 Loss Function
+
+**Combined loss**:
+```python
+loss_total = λ_next * loss_next_token
+           + λ_class * loss_class
+           + λ_state * loss_state
+
+where:
+  loss_next_token = CrossEntropy(logits_next, targets_next)
+  loss_class = CrossEntropy(logits_class, targets_class)
+  loss_state = CrossEntropy(logits_state, targets_state)
+
+  λ_next, λ_class, λ_state ∈ {0, 1}  # on/off switches
+```
+
+**Training modes** (via λ settings):
+1. **Next-token only**: (1, 0, 0)
+2. **Class only**: (0, 1, 0)
+3. **State only**: (0, 0, 1)
+4. **Next-token + Class**: (1, 1, 0)
+5. **Next-token + State**: (1, 0, 1)
+6. **All objectives**: (1, 1, 1)
+
+**Why configurable?**
+- Test which objectives help learning
+- Ablate to understand what model needs
+- State prediction might be easier than next-token (or vice versa)
+- Multi-task might improve or hurt (empirical question)
+
+**Default for initial experiments**: Mode 4 (next-token + class)
+- Both objectives are meaningful
+- Class is interpretable
+- Next-token ensures model learns sequence structure
+
+#### 3.5.2 Per-Position Masking
+
+**Padding mask**:
+- Don't compute loss on padded positions
+- Mask out padding tokens in loss calculation
+
+**Example**:
+```python
+# Sequence: ['a', 'b', <EOS>, <PAD>, <PAD>]
+# Valid positions: [0, 1, 2]
+# Compute loss only for positions 0, 1, 2
+```
+
+---
+
+### 3.6 Model Sizing
+
+**Hyperparameters informed by FSM properties**.
+
+#### 3.6.1 Embedding Dimension
+
+**Goal**: Sufficient capacity to represent FSM states
+
+**Heuristic**:
+```python
+embedding_dim = max(|Q|, |Σ|) * multiplier
+
+where:
+  |Q| = number of FSM states
+  |Σ| = alphabet size
+  multiplier = 2-4 (configurable)
+```
+
+**Rationale**:
+- Need at least |Q| dimensions to represent all states (in theory)
+- Alphabet size matters if learning character relationships
+- Multiplier adds headroom for robustness
+
+**Capacity experiments**:
+- **Undersized**: embedding_dim < |Q|
+- **Properly-sized**: embedding_dim ≈ |Q| to 2*|Q|
+- **Oversized**: embedding_dim >> |Q|
+
+**Minimum**: 32 or 64 (practical minimum for stability)
+
+#### 3.6.2 Number of Attention Heads
+
+**Heuristic**:
+```python
+num_heads = min(max(4, |Σ|), 8)
+
+# Or based on branching factor:
+num_heads = average_transitions_per_state
+```
+
+**Constraints**:
+- Must divide `embedding_dim` evenly
+- Minimum: 1 (for undersized experiments)
+- Typical: 4-8
+
+**Rationale**:
+- Each head could specialize on a transition type
+- More heads allow more specialization
+- Too many heads might over-parameterize small FSMs
+
+#### 3.6.3 MLP Dimension
+
+**Standard**: `mlp_dim = 4 * embedding_dim`
+
+**Adjustable for capacity experiments**:
+- Can try 2x, 4x, 8x multipliers
+- Affects parameter count significantly
+
+#### 3.6.4 Sequence Length
+
+**Based on data generation**:
+```python
+max_seq_length = expected_string_length + buffer
+
+# Typical: 16-64 for simple patterns
+```
+
+#### 3.6.5 Example Configurations
+
+**For FSM `a*b*` with |Q|=3, |Σ|=2**:
+
+**Config 1 (Undersized)**:
+- embedding_dim: 2 (< |Q|)
+- num_heads: 1
+- mlp_dim: 8
+- Total params: ~50-100
+
+**Config 2 (Properly-sized)**:
+- embedding_dim: 8 (≈ 3 * 2.5)
+- num_heads: 4
+- mlp_dim: 32
+- Total params: ~300-500
+
+**Config 3 (Oversized)**:
+- embedding_dim: 64 (>> |Q|)
+- num_heads: 8
+- mlp_dim: 256
+- Total params: ~10k+
+
+---
+
+### 3.7 Instrumentation
+
+**Purpose**: Extract internal representations for future analysis (Phase 2)
+
+**Required hooks**:
+
+#### 3.7.1 Attention Weights
+
+```python
+# For each head h, save attention matrix:
+attention_weights[h] ∈ ℝ^(seq_len × seq_len)
+
+# Where attention_weights[h][i, j] = attention from position i to j
+```
+
+**What to save**:
+- All heads, all layers
+- For sample inputs (don't save everything)
+- Store in experiment results
+
+**Use cases**:
+- Visualize attention patterns
+- Compare to FSM transition matrix
+- Identify which heads track which transitions
+
+#### 3.7.2 MLP Activations
+
+```python
+# Save MLP intermediate activations:
+mlp_pre ∈ ℝ^(seq_len × mlp_dim)   # before activation function
+mlp_post ∈ ℝ^(seq_len × embedding_dim)  # after second linear layer
+```
+
+**Use cases**:
+- Train linear probes to decode FSM state
+- Visualize activation space
+- Check if states are linearly separable
+
+#### 3.7.3 Residual Stream
+
+```python
+# Save hidden states at each point:
+h_input ∈ ℝ^(seq_len × embedding_dim)      # after embedding
+h_post_attn ∈ ℝ^(seq_len × embedding_dim)  # after attention block
+h_post_mlp ∈ ℝ^(seq_len × embedding_dim)   # after MLP block (final)
+```
+
+**Use cases**:
+- Decompose information flow
+- Measure layer contributions
+- Verify residual stream hypothesis
+
+#### 3.7.4 Implementation
+
+**Using PyTorch hooks**:
+```python
+# Register forward hooks to capture activations
+def save_activation(name):
+    def hook(module, input, output):
+        activations[name] = output.detach()
+    return hook
+
+# Register hooks
+model.attention.register_forward_hook(save_activation('attn'))
+model.mlp.register_forward_hook(save_activation('mlp'))
+```
+
+**Storage**:
+- Don't save activations for every training step (too expensive)
+- Save for validation set or specific test examples
+- Store in experiment results directory
+
+---
+
+### 3.8 Model Configuration
+
+**All hyperparameters in a config object**:
+
+```python
+ModelConfig:
+    # Vocabulary
+    vocab_size: int
+
+    # Architecture
+    embedding_dim: int
+    num_heads: int
+    mlp_dim: int
+    max_seq_length: int
+
+    # Factorized embedding
+    use_factorized_embedding: bool
+    factorization_rank: int  # k
+    embedding_l1_weight: float
+
+    # Output heads
+    num_classes: int
+    num_states: int
+
+    # Training objectives (loss weights)
+    lambda_next_token: float
+    lambda_class: float
+    lambda_state: float
+
+    # Optional features
+    use_goal_conditioning: bool
+
+    # Regularization
+    dropout: float
+
+    # Activation function
+    activation: str  # 'relu' or 'gelu'
+```
+
+**Auto-sizing helper**:
+```python
+def auto_size_model(fsm, multiplier=2, num_heads=4):
+    """Generate model config from FSM properties"""
+    embedding_dim = max(fsm.num_states, fsm.alphabet_size) * multiplier
+
+    # Adjust to make divisible by num_heads
+    embedding_dim = (embedding_dim // num_heads) * num_heads
+
+    return ModelConfig(
+        vocab_size=fsm.alphabet_size + num_special_tokens,
+        embedding_dim=embedding_dim,
+        num_heads=num_heads,
+        mlp_dim=4 * embedding_dim,
+        num_classes=len(fsm.classes),
+        num_states=fsm.num_states,
+        ...
+    )
+```
 
 ## 4. Data Generation
 
