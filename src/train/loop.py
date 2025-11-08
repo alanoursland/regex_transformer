@@ -16,6 +16,7 @@ from ..model.transformer import RegexTransformer
 from .losses import compute_multi_task_loss
 from .optim import build_optimizer, clip_gradients
 from .checkpoint import save_checkpoint
+from ..eval.metrics import compute_metrics as eval_compute_metrics
 
 @dataclass
 class TrainConfig:
@@ -39,32 +40,7 @@ def set_seed(seed: int):
 
 def evaluate(model, dataloader, device):
     """Evaluate model on a dataset."""
-    model.eval()
-    total_loss = 0
-    total_tokens = 0
-    correct_tokens = 0
-    
-    with torch.no_grad():
-        for batch in dataloader:
-            tokens = batch["tokens"].to(device)
-            attn_mask = batch["attn_mask"].to(device)
-            
-            outputs = model(tokens, attn_mask)
-            losses = compute_multi_task_loss(outputs, {k: v.to(device) for k, v in batch.items()})
-            
-            total_loss += losses["loss"].item() * tokens.size(0)
-            
-            # Token accuracy
-            preds = outputs["next_token_logits"].argmax(dim=-1)
-            targets = batch["next_tokens"].to(device)
-            mask = batch["loss_mask"].to(device)
-            correct_tokens += ((preds == targets) & mask).sum().item()
-            total_tokens += mask.sum().item()
-    
-    return {
-        "loss": total_loss / len(dataloader.dataset),
-        "token_acc": correct_tokens / total_tokens if total_tokens > 0 else 0.0,
-    }
+    return eval_compute_metrics(model, dataloader, device)
 
 def train_one_experiment(
     regex_def: RegexDefinition,
@@ -128,12 +104,13 @@ def train_one_experiment(
         
         print(f"Epoch {epoch+1}/{train_cfg.epochs} - "
               f"Train Loss: {train_loss/len(dataloaders['train']):.4f}, "
-              f"Val Loss: {val_metrics['loss']:.4f}, "
+              f"Val NLL: {val_metrics.get('nll', float('nan')):.4f}, "
               f"Val Acc: {val_metrics['token_acc']:.4f}")
         
         # Early stopping
-        if val_metrics["loss"] < best_val_loss:
-            best_val_loss = val_metrics["loss"]
+        val_loss = val_metrics.get("nll", float("inf"))
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
             patience_counter = 0
             save_checkpoint(
                 results_dir / "best.pt",
