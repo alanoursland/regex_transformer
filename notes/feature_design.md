@@ -1420,33 +1420,50 @@ def auto_size_model(fsm, multiplier=2, num_heads=4):
 ## 4. Data Generation
 
 ### 4.1 Generation Strategy
-- Use FSM to generate valid strings
-- Sample transitions to create diverse examples
-- Control string length distribution
-- Ensure coverage of different state classes
+
+The data generator operates directly on the compiled FSM for each regex.
+The FSM defines all legal transitions δ and terminal classes (Accept, Incomplete, Reject).
+We treat the FSM as a search space and produce sequences by guided exploration rather than naïve random walks.
+	•	Targeted sampling: Each sample begins with a target (class, length) drawn from configurable distributions.
+This provides direct control of length and class balance and eliminates geometric-length bias.
+	•	Backward and forward search:
+	•	Use backward walks from terminal states to q₀ to hit exact length/class targets efficiently.
+	•	Fall back to best-first/beam search (A*-style) when backward generation is infeasible or when additional coverage/diversity is desired.
+	•	Both modes support coverage weighting so rarely used (q, a) edges are favored.
+	•	Coverage control: Maintain per-state and per-edge hit counts; exploration bonuses bias search toward under-represented regions of the FSM.
+	•	Negative construction: Reject examples are generated through structured perturbations—illegal steps, overruns, premature stops, and wrong-branch alternations—ensuring diverse failure modes.
+	•	Extendable frontier: Every partial sequence (search node) can be re-enqueued to extend later, enabling curriculum growth or active rebalancing.
 
 ### 4.2 Data Characteristics
-- Strings reaching accept states
-- Strings in incomplete states (mid-FSM)
-- Strings in reject states (illegal transitions)
-- Balanced distribution across classes (or configurable)
+
+The resulting dataset contains sequences covering all reachable behaviors of the FSM:
+	•	Accept strings: Complete paths ending in A (accept states).
+	•	Incomplete strings: Prefixes ending in non-accept states from which A remains reachable.
+	•	Reject strings: Paths entering the reject sink or containing illegal transitions.
+	•	Balanced distribution: The generator enforces (or reports) class and length balance and tracks coverage statistics.
+	•	Configurable difficulty: Parameters (length range, class ratios, coverage targets) can be tuned to shape task complexity and support ablation or curriculum studies.
 
 ### 4.3 Labeling
-- **Per-position labels:**
-  - Next token (the following character or EOS)
-  - State class (current FSM state class, before next token)
-- Trace string through FSM to generate labels
-- Alignment with transformer input positions
+
+All labels are regenerated on-the-fly from the FSM at load time; nothing except the token sequence is stored.
+	•	Per-position labels:
+	•	Next token: the following character or EOS.
+	•	State class: the FSM class of the current state before reading the next token.
+	•	Label generation: Trace each string through δ(q,a) to produce the state sequence in O(L).
+	•	Alignment: State class labels align with transformer input positions, supporting both next-token and state-prediction objectives.
 
 ### 4.4 Dataset Splits
-- Training set
-- Validation set
-- Test set
-- Configurable sizes
 
-### 4.5 Reproducibility
-- Seeded random generation
-- Deterministic data creation
+Datasets are divided deterministically by hashing the raw string, guaranteeing no leakage between splits.
+	•	Training set – majority of samples.
+	•	Validation set – used for hyperparameter tuning and convergence checks.
+	•	Test set – held-out evaluation only.
+	•	Configurable sizes: Split proportions and optional OOD partitions (held-out lengths, edges, regex families) are set in configuration.
+
+### 4.5 Reproducibility and Telemetry
+	•	Deterministic generation: All randomness is seeded; given the same FSM and seed, data regenerate bit-for-bit.
+	•	Audit metadata: Each shard records the RNG seed, generation mode, and configuration hash.
+	•	Telemetry reports: For each shard the generator logs realized class/length histograms, state/edge coverage, negative subtype ratios, and generation failures—providing quantitative guarantees of dataset quality.
 
 ## 5. Symbolic Transformer Analogue (Idealized Reference Model)
 
@@ -1679,151 +1696,347 @@ It allows us to:
 ## 6. Experimental Framework
 
 ### 6.1 Experiment Definition
-- Define experiments in Python code (not JSON/YAML)
-- Direct value assignment, no translation overhead
-- Easy to create new experiments programmatically
+Experiments are defined entirely in Python code to maximize clarity, composability, and reproducibility.
+
+- **Direct instantiation:** Each experiment is a small Python class or script that directly assigns parameters — no JSON/YAML translation layer.  
+- **Executable specification:** Running the experiment object produces the complete pipeline (FSM → data → model → evaluation).  
+- **Programmatic generation:** New experiments (e.g., sweeps, ablations, curriculum sequences) can be created dynamically through Python loops or inheritance.  
+- **Explicit provenance:** All parameters are defined in code and stored alongside results for full traceability.
 
 ### 6.2 Experiment Components
-- Regex definition
-- Data generation parameters
-- Model architecture parameters
-- Training hyperparameters
-- Random seed
+Each experiment specifies five core components:
+
+1. **Regex definition**  
+   - The formal expression or pattern family to compile into an FSM.  
+   - May include composed or parameterized regexes for grouped studies.
+
+2. **Data generation parameters**  
+   - Controls dataset balance, sequence length distribution, and coverage targets.  
+   - Connects directly to the FSM for consistent labeling and reproducibility.
+
+3. **Model architecture parameters**  
+   - Transformer depth, width, embedding dimensions, positional encoding type, and other structural settings.  
+   - Enables controlled capacity studies and scaling experiments.
+
+4. **Training hyperparameters**  
+   - Optimizer type, learning rate, batch size, dropout, gradient clipping, and training schedule.  
+   - Tuned for stability and comparability across datasets.
+
+5. **Random seed**  
+   - Shared across Python, NumPy, PyTorch, and the data generator to guarantee deterministic runs.
 
 ### 6.3 Experiment Execution
-1. Take regex definition → generate FSM
-2. Generate train/validation/test data from FSM
-3. Build and train transformer model
-4. Evaluate model performance
-5. Save all artifacts
+Each experiment follows a consistent sequence:
+
+1. **Compile regex → FSM**  
+   - Convert the regex definition into an FSM with all states, transitions, and terminal classes.
+
+2. **Generate data**  
+   - Produce training, validation, and test splits using the configured data generator.  
+   - Verify balance and coverage via telemetry reports.
+
+3. **Build and train model**  
+   - Instantiate the transformer model with specified parameters.  
+   - Train until convergence or early-stopping criteria are met.
+
+4. **Evaluate model performance**  
+   - Compute accuracy for next-token prediction, FSM-state prediction, and acceptance classification.  
+   - Optionally include interpretability diagnostics (e.g., attention–FSM correlation, structure extraction).
+
+5. **Save all artifacts**  
+   - Persist configuration, FSM, datasets, checkpoints, logs, metrics, and visualizations.  
+   - Record random seed and Git commit hash for reproducibility.
 
 ### 6.4 Results Organization
-- Results go to `src/results/` (gitignored)
-- Organized by experiment name/ID
-- **Each experiment folder contains:**
-  - Experiment configuration
-  - Generated FSM
-  - Trained model checkpoints
-  - Training logs
-  - Evaluation metrics
-  - Visualizations
+All experiment outputs are stored under `src/results/` (git-ignored).
+
+**Directory structure:**
+```
+src/results/
+└── <experiment_id>/
+├── config.py
+├── fsm.pkl
+├── data/
+├── checkpoints/
+├── logs/
+├── metrics.json
+├── visualizations/
+└── telemetry.json
+```
+- **Experiment ID:** Derived from a descriptive name and timestamp or UUID.  
+- **Isolation:** Each experiment directory is self-contained; re-running the same configuration regenerates identical outputs.
 
 ### 6.5 Experiment Configuration
-- Lightweight, research-grade approach
-- Easy to modify and iterate
-- No heavy frameworks
-- Clear parameter provenance
+- **Lightweight and scriptable:** No external experiment manager; all configuration handled in Python.  
+- **Explicit provenance:** Every parameter, including defaults and seeds, is saved with results.  
+- **Easy iteration:** New experiments require only a few lines of code; parameter sweeps are simple Python loops.  
+- **Composable utilities:** Shared modules manage FSM compilation, data generation, model building, and evaluation.  
+- **Research-grade simplicity:** Emphasizes transparency and flexibility over automation overhead while preserving full reproducibility.
+
 
 ## 7. Evaluation/Metrics/Visualization
 
-### 7.1 Training Metrics
-- Loss (total, next-token component, state-class component)
-- Accuracy (next-token, state-class)
-- Per-class accuracy for state classification
-- Training curves over epochs
+## 7. Evaluation and Metrics
 
-### 7.2 Evaluation Metrics
-- Test set accuracy (next-token, state-class)
-- Confusion matrix for state classification
-- Per-class performance breakdown
-- Comparison to baseline (random, simple heuristic)
+### 7.1 Evaluation Goals
+The evaluation framework measures both **task performance** and **model interpretability**.  
+Metrics are designed to quantify how well the model learns the formal structure defined by the FSM, not merely token prediction accuracy.
 
-### 7.3 Capacity Analysis Metrics
-- Performance vs model size
-- Minimum capacity for convergence
-- Performance saturation point
+Core goals:
+- Verify the model’s ability to reproduce FSM behavior (correct transitions and acceptance).  
+- Characterize generalization across lengths, held-out edges, and regex families.  
+- Assess alignment between internal representations (attention, activations) and FSM structure.
 
-### 7.4 Visualizations
-- Training/validation loss curves
-- Accuracy curves
-- Confusion matrices
-- FSM graph visualization
-- *(Future: attention heatmaps, activation visualizations)*
+### 7.2 Evaluation Workflow
+Each trained model is evaluated through a structured, multi-stage process:
 
-### 7.5 Outputs
-- Plots saved to experiment results directory
-- Summary metrics in logs
-- Easy to compare across experiments
+1. **Load experiment artifacts**  
+   - Load FSM, data splits, and trained model checkpoint.  
+   - Reconstruct tokenizers and state labelers to ensure alignment.
+
+2. **Run primary evaluations**  
+   - Compute metrics on the held-out test set for next-token and state prediction.  
+   - Optionally include additional splits (e.g., length-OOD, edge-OOD, or unseen regexes).
+
+3. **Collect interpretability diagnostics**  
+   - Analyze attention heads, hidden representations, and linear probes.  
+   - Compare learned structure to FSM topology and transition dynamics.
+
+4. **Aggregate and visualize results**  
+   - Summarize metrics in tables and plots.  
+   - Export visualizations for interpretability analyses (attention maps, probe correlations, graph overlays).
+
+### 7.3 Core Metrics
+The following metrics are computed for all experiments:
+
+- **Token accuracy** – Standard next-token prediction accuracy on the test set.  
+- **State classification accuracy** – Accuracy of predicting the correct FSM state class (Accept / Incomplete / Reject) per position.  
+- **Acceptance decision accuracy** – Accuracy of full-string classification (whether the model predicts a sequence as accepted).  
+- **Sequence-level loss** – Average negative log-likelihood over full sequences.  
+- **Length generalization gap** – Performance difference between in-distribution and out-of-distribution sequence lengths.  
+- **Edge coverage accuracy** – Fraction of FSM transitions correctly modeled during generation or inference.
+
+### 7.4 Interpretability Metrics
+To evaluate whether the model’s internal representations reflect the FSM structure:
+
+- **Attention–transition correlation**  
+  - Compute the correlation between attention weights and true FSM transition adjacency matrices.  
+  - Quantifies whether attention focuses on structurally relevant tokens.
+
+- **State probe accuracy**  
+  - Train linear probes on hidden states to predict the FSM state class.  
+  - Measures how explicitly FSM structure is encoded in representations.
+
+- **Transition probe accuracy**  
+  - Predict next-state IDs or edge types from hidden activations.  
+  - Evaluates whether transitions are locally linearizable in representation space.
+
+- **Representational similarity**  
+  - Compute cosine similarity or CKA between hidden states grouped by FSM state.  
+  - High intra-state similarity indicates structural abstraction.
+
+- **Graph reconstruction score**  
+  - Attempt to reconstruct the FSM graph from learned attention or probe connectivity; compare precision/recall against ground truth.
+
+### 7.5 OOD Generalization Tests
+Generalization is tested under controlled out-of-distribution regimes:
+
+- **Length-OOD:** Evaluate on sequences longer than seen in training.  
+- **Edge-OOD:** Exclude certain transitions during training and test on them.  
+- **Regex-OOD:** Train on a subset of regex families and test on structurally similar but unseen ones.  
+- **Noise robustness:** Optionally inject token corruption or perturbations to test FSM stability.
+
+### 7.6 Reporting and Visualization
+Each experiment produces a standardized results package:
+
+- **metrics.json** – Numerical summaries of all metrics (per split and aggregate).  
+- **visualizations/** –  
+  - Attention heatmaps  
+  - State-probe confusion matrices  
+  - Length generalization plots  
+  - Graph overlays comparing attention structure to FSM transitions  
+- **analysis_notebook.ipynb** – Optional per-experiment notebook for deeper inspection and qualitative analysis.
+
+### 7.7 Reproducibility and Comparison
+- All evaluations are deterministic given a fixed random seed and checkpoint.  
+- Each experiment stores its metrics and visualizations in its own result directory.  
+- Comparison utilities allow aggregation across experiments for tables, charts, and statistical summaries.  
+- Consistent evaluation protocols ensure comparability across regexes, model sizes, and data regimes.
 
 ## 8. Testing
 
 ### 8.1 What Needs Testing
 
 #### 8.1.1 Regex/FSM Implementation
-- **Why:** Complex logic, easy to get wrong
-- **What:** State transitions, classification, generation
-- Unit tests for FSM operations
-- Validation against known regex semantics
+- **Why:** The FSM layer encodes core formal logic and is the foundation for data generation and labeling. Even small errors can propagate through all experiments.  
+- **What to test:**  
+  - **State transitions:** Verify that δ(q, a) returns the correct next state for all valid (q, a) pairs.  
+  - **Classification:** Confirm that each state’s class (Accept, Incomplete, Reject) matches expected semantics.  
+  - **Generation:** Ensure that generated strings accepted by the FSM correspond to the true regex language.  
+- **How:**  
+  - Unit tests for FSM construction, δ-transition mapping, and class assignment.  
+  - Round-trip validation of regex ↔ FSM equivalence using small reference patterns (e.g., `a+`, `(ab)*`, `a|b`).  
+  - Property-based tests to check closure properties (e.g., concatenation, alternation, repetition).
 
 #### 8.1.2 Experimental Framework
-- **Why:** Ensure reproducibility and correctness
-- **What:** Data generation, experiment execution, results saving
-- Integration tests for end-to-end workflow
+- **Why:** Experiments are the central pipeline; correctness and reproducibility depend on deterministic orchestration.  
+- **What to test:**  
+  - **Data generation:** Deterministic outputs under fixed seeds, balanced sampling, and class distributions.  
+  - **Experiment execution:** End-to-end pipeline (regex → FSM → data → model → results) runs without errors.  
+  - **Results saving:** All expected artifacts (config, FSM, checkpoints, metrics, logs) are written correctly.  
+- **How:**  
+  - Integration tests that instantiate a minimal regex (e.g., `a+`) and run a full training-and-evaluation cycle.  
+  - Hash comparisons of generated datasets to confirm reproducibility.  
+  - File-existence and schema checks for result directories.
 
-#### 8.1.3 Metrics/Visualization (if custom)
-- **Why:** Ensure accurate measurement
-- **What:** Metric calculations, plot generation
-- Unit tests for metric computation
+#### 8.1.3 Metrics / Visualization (if custom)
+- **Why:** Custom metrics and visualization routines must yield accurate, interpretable results to support analysis.  
+- **What to test:**  
+  - Metric computation correctness for token accuracy, state prediction, and acceptance classification.  
+  - Consistency between numerical outputs and visual summaries (e.g., confusion matrices).  
+  - Plot generation sanity (no crashes, correct axis labels, proper scaling).  
+- **How:**  
+  - Unit tests with small synthetic data and known expected metric values.  
+  - Golden-file comparisons for generated plots when applicable.
 
-### 8.2 What Doesn't Need Testing
+---
+
+### 8.2 What Doesn’t Need Testing
 
 #### 8.2.1 Transformer Model
-- Standard PyTorch implementation
-- Trust PyTorch primitives
-- Validate through training, not unit tests
+- The transformer implementation relies entirely on PyTorch primitives and standard library modules.  
+- These components are thoroughly tested upstream; reproducing those tests adds no value.  
+- Validation occurs through **training behavior** (loss decrease, overfitting checks), not dedicated unit tests.
+
+---
 
 ### 8.3 Testing Approach
-- Unit tests for core logic
-- Sanity checks (can model overfit tiny dataset?)
-- End-to-end validation on simple regex
-- Research-grade testing (not production-grade)
+- **Unit tests for core logic:**  
+  Validate all deterministic functions (FSM transitions, label tracing, metrics).  
+
+- **Sanity checks:**  
+  Ensure the model can overfit a tiny dataset (e.g., 10 samples) as a minimal correctness signal.  
+
+- **End-to-end validation:**  
+  Run a complete experiment on a trivial regex (e.g., `a+`) to confirm the pipeline operates and results are saved.  
+
+- **Research-grade testing:**  
+  Emphasis is on **correctness, determinism, and scientific reproducibility**, not full production coverage.  
+  Focus testing effort where implementation complexity or mathematical correctness matters most.
 
 ## 9. Code Guidelines
 
 ### 9.1 Core Principles
-- **PyTorch-based:** Use PyTorch for all neural network components
-- **Low overhead:** Minimal abstractions, direct implementations
-- **Research-grade code:** Readable, modifiable, not production-hardened
-- **Early failure preference:** Don't hide errors, fail fast and loud
-- **Minimal dependencies:** Standard library + PyTorch + minimal extras
+- **PyTorch-based:** Use PyTorch for all neural components; avoid custom autograd unless absolutely necessary.
+- **Low overhead:** Prefer simple functions and small modules over abstractions and metaprogramming.
+- **Research-grade:** Optimize for readability and editability, not production durability.
+- **Fail early:** Prefer assertions and explicit checks over silent fallbacks.
+- **Minimal deps:** Standard library + PyTorch; add only when a dependency removes substantial complexity.
 
 ### 9.2 Dependencies
-- **Required:** PyTorch, Python standard library
-- **Optional:** matplotlib (plots), networkx/graphviz (FSM viz), numpy (if needed)
-- **Forbidden:** Heavy frameworks, experiment tracking services, transformers library
+- **Required:** `python>=3.10`, `torch`.
+- **Optional (allowed):** `numpy` (array ops), `matplotlib` (basic plots), `networkx`/`graphviz` (FSM viz), `tqdm` (progress).
+- **Discouraged/forbidden:** Heavy orchestration frameworks, remote experiment trackers, general-purpose “transformers” libraries, bespoke logging stacks.
+  - Rationale: keep the conceptual surface small and reproducible; avoid vendor lock-in and hidden state.
 
 ### 9.3 Code Organization
-- Clear module structure
-- Self-contained components
-- Easy to understand and modify
-- Avoid over-engineering
+- **Modules, not monoliths:** Keep files short and single-purpose (e.g., `fsm.py`, `data_gen.py`, `model.py`, `train.py`, `eval.py`, `experiments/`).
+- **No cyclical imports:** Keep dependencies acyclic; pass objects explicitly.
+- **Pure-ish utilities:** Make helpers side-effect-free; return values instead of mutating global state.
+- **Tight coupling where warranted:** If two functions are always changed together, colocate them. Avoid “generic layers” that obscure the math.
 
 ### 9.4 Configuration
-- Experiments defined in code, not config files
-- Direct Python objects
-- No config parsers or translators
-- Easy to version control and diff
+- **Code == config:** Experiments are Python objects; no YAML/JSON parsers.
+- **Explicit defaults:** Set defaults in constructors; avoid hidden env vars.
+- **Provenance:** Store the exact experiment object (repr/pretty-print) with results.
+- **Param changes are code changes:** If a setting matters, it lives in code and lands in version control.
 
 ### 9.5 Error Handling
-- Validate inputs aggressively
-- Assert assumptions explicitly
-- Clear error messages
-- Fail rather than silently produce wrong results
+- **Aggressive validation:** Assert regex/alphabets are consistent; check FSM totality where required; validate shapes and dtypes.
+- **Clear messages:** Assertions should say *what* failed and *why it matters*.
+- **No silent casts:** Be explicit about device/dtype transfers; never auto-float or auto-cuda.
+- **Boundary checks:** When sampling by target (class, length), verify feasibility before generating; raise informative errors otherwise.
 
 ### 9.6 Documentation
-- Docstrings for public APIs
-- Comments for non-obvious logic
-- README for setup and usage
-- Research-appropriate level of documentation
+- **Docstrings for public APIs:** One-liners are fine; include argument/return semantics and invariants.
+- **Comments for non-obvious math:** Especially in FSM construction/minimization and attention/metric routines.
+- **README:** How to run an experiment end-to-end; expected outputs; troubleshooting tips.
+- **Keep it brief:** Documentation should accelerate editing, not encase it.
+
+---
+
+### 9.7 Reproducibility & Seeds
+- **Single seed source:** Thread a single integer seed through Python/NumPy/PyTorch and the data generator.
+- **Deterministic flags:** Where practical, set PyTorch determinism options; if you disable them for speed, note it in results.
+- **Record context:** Save seed, `torch.__version__`, CUDA info, and current Git commit hash with each experiment.
+
+### 9.8 Logging & Telemetry (Lightweight)
+- **Print + tiny logger:** Use `print` or Python’s `logging` with INFO/DEBUG; avoid heavy log infra.
+- **Structured crumbs:** Save `metrics.json` and `telemetry.json` (data distributions, coverage, retry rates).
+- **No PII/no uploads:** Results are local files under `src/results/`; no network side effects.
+
+### 9.9 Performance & Numerics
+- **Default dtypes:** Use `float32` unless a test explicitly needs `float64` (e.g., numeric stability checks).
+- **Devices:** Accept `device` as an argument; don’t read global CUDA state inside functions.
+- **Batch shapes first:** Prefer batch-first tensors; assert shapes at module boundaries.
+- **Micro-optimizations last:** Only optimize hotspots you’ve measured; don’t preempt clarity.
+
+### 9.10 File I/O & Serialization
+- **Results live in** `src/results/<experiment_id>/`.
+- **Serialization:** Use simple formats—`json` for metrics/telemetry, `pickle/pt` for FSMs/checkpoints (with version stamps).
+- **Atomic writes:** Write to temp then rename to avoid partial files on crash.
+- **Path hygiene:** No hard-coded absolute paths; use `pathlib`.
+
+### 9.11 Style & Linting (Pragmatic)
+- **Type hints:** Helpful for public functions; optional elsewhere.
+- **Formatting:** If you want consistency, use `black` (optional); don’t block progress on style nits.
+- **Small functions:** Prefer short, testable functions over giant blocks.
+
+### 9.12 Notebooks Policy
+- **Optional, not canonical:** Use notebooks for one-off analysis only.
+- **Export results:** Any insight from a notebook should be captured by code in `eval/` or saved as artifacts (plots/metrics) under the experiment directory.
+- **No hidden state:** Don’t keep training loops or data generation logic only in notebooks.
+
+### 9.13 Testing Scope (Right-Sized)
+- **Unit tests:** FSM ops, tracing, metrics math, and data-feasibility checks.
+- **Smoke tests:** One end-to-end experiment on a trivial regex (e.g., `a+`) to validate the pipeline.
+- **Sanity over coverage:** We are not chasing coverage percentages; we’re guarding against silent wrongness.
+
+### 9.14 API Design Do/Don’t
+- **Do:** Pass objects explicitly; return data rather than mutating globals; keep function signatures small and explicit.
+- **Don’t:** Use singletons, implicit registries, or magical global configs; hide control flow in decorators/metaclasses.
+
+### 9.15 When to Add a Dependency
+- **Add if:** It removes ≥100 lines of tricky code or eliminates a maintenance risk.
+- **Don’t add if:** It’s for convenience UX, dashboards, or cloud hooks that complicate reproducibility.
+
+### 9.16 Deprecation & TODOs
+- **TODO tags:** Short, dated comments (`# TODO(2025-11-07): reason`) are fine; prune regularly.
+- **Deprecation:** Prefer delete/replace over long-lived deprecation layers; the codebase is research, not a public API.
+
+### 9.17 Security & Licensing (Minimal)
+- **No secrets:** Never read env secrets or external tokens; keep everything local.
+- **Licenses:** Respect third-party tool licenses (Graphviz, etc.); include attributions where required.
+
+---
+**Principle of least sophistication:** if a simpler implementation communicates the idea, choose it.
 
 ## 10. Non-Features / Out of Scope
 
-- Multi-layer transformers (start with 1 layer)
-- Complex regex features (backreferences, lookahead/lookbehind)
-- Large-scale experiments (keep it small and interpretable)
-- Production deployment
-- Web interfaces
-- Distributed training
-- Interpretability analysis (deferred to Phase 2)
-- FSM extraction algorithms (future work)
-- Automated hyperparameter tuning
+The following items are intentionally excluded from the current phase of development.  
+They may be revisited in later stages once the core framework is stable and scientifically validated.
+
+- **Multi-layer transformers** – Phase 1 focuses on a single-layer transformer to simplify analysis and interpretability.  
+- **Complex regex features** – Backreferences, lookahead/lookbehind, and other non-regular constructs are out of scope; only pure regular languages are supported.  
+- **Large-scale experiments** – Dataset sizes, model scales, and compute budgets are kept small for fast iteration and precise diagnostics.  
+- **Production deployment** – No serving, packaging, or runtime optimization; experiments run locally or in controlled research environments.  
+- **Web interfaces** – No web dashboards or front-end visualization layers; results are local plots and static artifacts.  
+- **Distributed or multi-GPU training** – Single-process, single-device operation; scaling deferred to future work.  
+- **Interpretability analysis** – Deferred to Phase 2 once the core model and data pipeline are validated.  
+- **FSM extraction algorithms** – Reverse-engineering or graph extraction from model weights is future research, not part of this phase.  
+- **Automated hyperparameter tuning** – All hyperparameters are manually chosen; no AutoML or sweeping frameworks.
+
+### Rationale
+This scope keeps the project lean, interpretable, and reproducible.  
+Phase 1’s goal is to **validate the framework**, not to optimize scale or interface polish.  
+Every feature above adds either engineering overhead or conceptual noise without advancing the central research question.
