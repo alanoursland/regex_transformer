@@ -3,7 +3,7 @@
 import json
 import hashlib
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .dfa import FSM
 from .regex_def import RegexDefinition
@@ -104,7 +104,3 @@ def load_fsm(path: Path) -> FSM:
     )
 
     return fsm
-
-
-# Fix missing import
-from typing import Optional

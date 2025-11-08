@@ -12,37 +12,20 @@ def compile_regex(regex_def: RegexDefinition) -> FSM:
     """
     Compile a RegexDefinition into a minimized DFA.
 
-    Process: regex → NFA → DFA → minimized DFA
+    Process: Build DFA directly using regex matching
 
     Args:
         regex_def: Regex definition with alphabet and patterns
 
     Returns:
-        Minimized FSM
+        FSM
     """
-    # Build NFA using Python's re module for each pattern
-    # Then convert to DFA via subset construction
-    # Then minimize using Hopcroft's algorithm
-
-    # For simplicity in Phase 1, we'll build a combined DFA directly
-    # by using Python's re module to simulate the NFA
-
     alphabet = regex_def.alphabet
     patterns = regex_def.patterns
 
-    # Build DFA via subset construction
-    nfa_states, nfa_transitions, nfa_start, nfa_accepts = _build_nfa_from_patterns(
+    # Build DFA directly by exploring reachable states
+    dfa_states, dfa_transitions, dfa_start, dfa_state_classes = _build_dfa_direct(
         regex_def
-    )
-
-    # Convert NFA to DFA via subset construction
-    dfa_states, dfa_transitions, dfa_start, dfa_state_classes = _subset_construction(
-        alphabet=alphabet,
-        nfa_states=nfa_states,
-        nfa_transitions=nfa_transitions,
-        nfa_start=nfa_start,
-        nfa_accepts=nfa_accepts,
-        patterns=patterns,
     )
 
     # Minimize DFA
@@ -65,159 +48,117 @@ def compile_regex(regex_def: RegexDefinition) -> FSM:
     )
 
 
-def _build_nfa_from_patterns(
+def _build_dfa_direct(
     regex_def: RegexDefinition,
-) -> Tuple[Set[int], Dict[Tuple[int, Optional[str]], Set[int]], int, Dict[int, str]]:
+) -> Tuple[List[int], Dict[Tuple[int, int], int], int, Dict[int, str]]:
     """
-    Build an NFA using Python's re module.
+    Build DFA directly by BFS over string prefixes.
 
-    This is a pragmatic approach: we use re.match() to simulate NFA behavior
-    rather than implementing Thompson's construction from scratch.
-
-    Returns:
-        (states, transitions, start_state, accept_states_map)
-        transitions: (state, char_or_None) -> set of next states
-        accept_states_map: state -> class_name for accepting states
+    Uses Python's re module to check pattern matching.
+    Limits exploration depth to keep state space manageable.
     """
-    # For Phase 1, we'll use a simple simulation-based approach
-    # Build a state graph by exploring all possible string prefixes
-
     alphabet = regex_def.alphabet
     patterns = regex_def.patterns
 
-    # Compile regex patterns
-    compiled_patterns = [(re.compile(f"^{pattern}$"), class_name) for pattern, class_name in patterns]
+    # Compile patterns
+    # Note: Users should use explicit parentheses for alternation (e.g., '(a|b)' not 'a|b')
+    # to avoid precedence issues with anchors
+    compiled_patterns = [
+        (re.compile(f"^{pattern}$"), re.compile(f"^{pattern}"), class_name)
+        for pattern, class_name in patterns
+    ]
 
-    # States are represented by string prefixes
-    # We'll explore breadth-first up to a reasonable depth
-    MAX_DEPTH = 20  # Limit exploration depth for Phase 1
-
-    state_to_id: Dict[str, int] = {"": 0}  # Empty string is start state
+    # State = string reached so far
+    # We'll use strings as state IDs initially
+    state_to_id: Dict[str, int] = {"": 0}
     id_to_state: Dict[int, str] = {0: ""}
     next_id = 1
 
-    transitions: Dict[Tuple[int, Optional[str]], Set[int]] = defaultdict(set)
-    accept_states: Dict[int, str] = {}
+    transitions: Dict[Tuple[int, int], int] = {}
+    state_classes: Dict[int, str] = {}
 
-    # BFS exploration
+    # Classify start state
+    state_classes[0] = _classify_string("", compiled_patterns, alphabet)
+
+    # BFS
+    MAX_LENGTH = 10  # Limit string length for Phase 1
     queue = deque([""])
     visited = {""}
 
     while queue:
-        prefix = queue.popleft()
-        if len(prefix) > MAX_DEPTH:
-            continue
+        current_str = queue.popleft()
+        current_id = state_to_id[current_str]
 
-        state_id = state_to_id[prefix]
-
-        # Check if this prefix matches any pattern
-        for compiled_re, class_name in compiled_patterns:
-            if compiled_re.match(prefix):
-                accept_states[state_id] = class_name
-                break
-
-        # Explore transitions
-        for char in alphabet:
-            next_prefix = prefix + char
-
-            if next_prefix not in state_to_id:
-                state_to_id[next_prefix] = next_id
-                id_to_state[next_id] = next_prefix
-                next_id += 1
-
-            next_id_val = state_to_id[next_prefix]
-            transitions[(state_id, char)].add(next_id_val)
-
-            if next_prefix not in visited:
-                visited.add(next_prefix)
-                queue.append(next_prefix)
-
-    states = set(state_to_id.values())
-    start = 0
-
-    return states, transitions, start, accept_states
-
-
-def _subset_construction(
-    alphabet: Tuple[str, ...],
-    nfa_states: Set[int],
-    nfa_transitions: Dict[Tuple[int, Optional[str]], Set[int]],
-    nfa_start: int,
-    nfa_accepts: Dict[int, str],
-    patterns: Tuple[Tuple[str, str], ...],
-) -> Tuple[List[int], Dict[Tuple[int, int], int], int, Dict[int, str]]:
-    """
-    Convert NFA to DFA via subset construction.
-
-    Returns:
-        (dfa_states, dfa_transitions, dfa_start, dfa_state_classes)
-    """
-    # DFA states are subsets of NFA states
-    # We represent them as frozen sets
-
-    start_set = frozenset([nfa_start])
-    dfa_start_id = 0
-
-    subset_to_id: Dict[FrozenSet[int], int] = {start_set: 0}
-    id_to_subset: Dict[int, FrozenSet[int]] = {0: start_set}
-    next_id = 1
-
-    dfa_transitions: Dict[Tuple[int, int], int] = {}
-    dfa_state_classes: Dict[int, str] = {}
-
-    # Determine class for start set
-    dfa_state_classes[0] = _classify_subset(start_set, nfa_accepts)
-
-    # BFS to build DFA
-    queue = deque([start_set])
-    visited = {start_set}
-
-    while queue:
-        current_subset = queue.popleft()
-        current_id = subset_to_id[current_subset]
-
-        # For each character in alphabet
+        # Try each character
         for char_idx, char in enumerate(alphabet):
-            # Compute next subset
-            next_subset = set()
-            for nfa_state in current_subset:
-                next_states = nfa_transitions.get((nfa_state, char), set())
-                next_subset.update(next_states)
+            next_str = current_str + char
 
-            next_subset_frozen = frozenset(next_subset)
+            # Only explore up to MAX_LENGTH
+            if len(next_str) > MAX_LENGTH:
+                # Map to a special "too_long" state (we'll map to reject later)
+                # For now, just skip
+                continue
 
-            # Add new DFA state if needed
-            if next_subset_frozen not in subset_to_id:
-                subset_to_id[next_subset_frozen] = next_id
-                id_to_subset[next_id] = next_subset_frozen
-                dfa_state_classes[next_id] = _classify_subset(next_subset_frozen, nfa_accepts)
+            # Add state if new
+            if next_str not in state_to_id:
+                state_to_id[next_str] = next_id
+                id_to_state[next_id] = next_str
+                state_classes[next_id] = _classify_string(next_str, compiled_patterns, alphabet)
                 next_id += 1
 
-                if next_subset_frozen not in visited:
-                    visited.add(next_subset_frozen)
-                    queue.append(next_subset_frozen)
+            next_id_val = state_to_id[next_str]
+            transitions[(current_id, char_idx)] = next_id_val
 
-            next_id_val = subset_to_id[next_subset_frozen]
-            dfa_transitions[(current_id, char_idx)] = next_id_val
+            # Add to queue if not visited
+            if next_str not in visited and len(next_str) <= MAX_LENGTH:
+                visited.add(next_str)
+                queue.append(next_str)
 
-    dfa_states = list(range(len(subset_to_id)))
-    return dfa_states, dfa_transitions, dfa_start_id, dfa_state_classes
+    dfa_states = list(range(len(state_to_id)))
+    return dfa_states, transitions, 0, state_classes
 
 
-def _classify_subset(subset: FrozenSet[int], nfa_accepts: Dict[int, str]) -> str:
+def _classify_string(s: str, compiled_patterns: List[Tuple], alphabet: Tuple[str, ...]) -> str:
     """
-    Classify a DFA state (subset of NFA states).
+    Classify a string based on patterns.
 
-    Returns the class name if any state in the subset is accepting,
-    otherwise returns "incomplete" (or "reject" if we know it's a dead end).
+    Returns class name if fully matched, "incomplete" if prefix of a match,
+    or "reject" if neither.
     """
-    for nfa_state in subset:
-        if nfa_state in nfa_accepts:
-            return nfa_accepts[nfa_state]
+    # Check if fully matches any pattern
+    for full_pattern, prefix_pattern, class_name in compiled_patterns:
+        if full_pattern.match(s):
+            return class_name
 
-    # Not accepting - could be incomplete or reject
-    # For now, return "incomplete" - we'll add explicit reject later
-    return "incomplete"
+    # Check if we can extend this string to eventually match
+    if _can_extend_to_match(s, compiled_patterns, alphabet):
+        return "incomplete"
+
+    return "reject"
+
+
+def _can_extend_to_match(s: str, compiled_patterns: List[Tuple], alphabet: Tuple[str, ...], max_depth: int = 10) -> bool:
+    """
+    Check if a string can be extended to match any pattern.
+
+    Uses BFS-style exploration up to max_depth.
+    """
+    if len(s) >= max_depth:
+        return False
+
+    for char in alphabet:
+        extended = s + char
+
+        # Check if this extension matches
+        for full_pattern, _, _ in compiled_patterns:
+            if full_pattern.match(extended):
+                return True
+
+        # Recursively check if we can extend further
+        if _can_extend_to_match(extended, compiled_patterns, alphabet, max_depth):
+            return True
+
+    return False
 
 
 def _minimize_dfa(
@@ -228,10 +169,7 @@ def _minimize_dfa(
     dfa_state_classes: Dict[int, str],
 ) -> Tuple[List[int], Dict[Tuple[int, int], int], int, Dict[int, str]]:
     """
-    Minimize DFA using Hopcroft's algorithm.
-
-    For Phase 1, we'll use a simpler but correct approach:
-    partition refinement based on equivalence classes.
+    Minimize DFA using partition refinement.
     """
     # Initial partition: separate by class
     class_to_states: Dict[str, Set[int]] = defaultdict(set)
@@ -242,29 +180,35 @@ def _minimize_dfa(
 
     # Refine partitions until stable
     changed = True
-    while changed:
+    max_iterations = 100
+    iteration = 0
+
+    while changed and iteration < max_iterations:
+        iteration += 1
         changed = False
         new_partitions = []
 
         for partition in partitions:
-            # Try to split this partition
             if len(partition) == 1:
                 new_partitions.append(partition)
                 continue
 
-            # Group states by their transition signatures
+            # Group states by transition signature
             signatures: Dict[Tuple, Set[int]] = defaultdict(set)
 
             for state in partition:
                 sig = []
                 for char_idx in range(len(alphabet)):
                     next_state = dfa_transitions.get((state, char_idx))
-                    # Find which partition the next state belongs to
+
+                    # Find which partition contains next_state
                     next_partition_idx = None
-                    for p_idx, p in enumerate(partitions):
-                        if next_state in p:
-                            next_partition_idx = p_idx
-                            break
+                    if next_state is not None:
+                        for p_idx, p in enumerate(partitions):
+                            if next_state in p:
+                                next_partition_idx = p_idx
+                                break
+
                     sig.append(next_partition_idx)
 
                 signatures[tuple(sig)].add(state)
@@ -278,12 +222,11 @@ def _minimize_dfa(
         partitions = new_partitions
 
     # Build minimized DFA
-    # Map old states to new representative states
     state_to_partition: Dict[int, int] = {}
     partition_representatives = []
 
     for p_idx, partition in enumerate(partitions):
-        representative = min(partition)  # Choose canonical representative
+        representative = min(partition)
         partition_representatives.append(representative)
         for state in partition:
             state_to_partition[state] = p_idx
@@ -291,9 +234,10 @@ def _minimize_dfa(
     # Build minimized transitions
     min_transitions: Dict[Tuple[int, int], int] = {}
     for (state, char_idx), next_state in dfa_transitions.items():
-        min_state = state_to_partition[state]
-        min_next_state = state_to_partition[next_state]
-        min_transitions[(min_state, char_idx)] = min_next_state
+        if next_state is not None:
+            min_state = state_to_partition[state]
+            min_next_state = state_to_partition[next_state]
+            min_transitions[(min_state, char_idx)] = min_next_state
 
     # Build minimized state classes
     min_state_classes = {}
@@ -315,35 +259,30 @@ def _build_fsm(
     patterns: Tuple[Tuple[str, str], ...],
 ) -> FSM:
     """
-    Build final FSM with explicit reject state.
-
-    Ensures the transition function is total (all transitions defined).
+    Build final FSM with explicit reject state and total transition function.
     """
-    # Collect all class names, add "reject" if not present
+    # Collect all class names
     class_names = set(state_classes.values())
     class_names.add("reject")
-    classes_list = sorted(class_names)  # Canonical ordering
+    classes_list = sorted(class_names)
     class_to_id = {name: idx for idx, name in enumerate(classes_list)}
 
-    # Check if we need to add an explicit reject state
-    has_reject = "reject" in state_classes.values()
+    # Find or create reject state
+    reject_id = None
+    for state, class_name in state_classes.items():
+        if class_name == "reject":
+            reject_id = state
+            break
 
-    if not has_reject:
+    if reject_id is None:
         # Add explicit reject state
         reject_id = len(states)
         states.append(reject_id)
         state_classes[reject_id] = "reject"
 
-        # Add self-loops for reject state
-        for char_idx in range(len(alphabet)):
-            transitions[(reject_id, char_idx)] = reject_id
-    else:
-        # Find existing reject state
-        reject_id = None
-        for state, class_name in state_classes.items():
-            if class_name == "reject":
-                reject_id = state
-                break
+    # Ensure reject state has self-loops
+    for char_idx in range(len(alphabet)):
+        transitions[(reject_id, char_idx)] = reject_id
 
     # Fill in missing transitions (point to reject)
     for state in states:

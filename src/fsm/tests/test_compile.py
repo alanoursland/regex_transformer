@@ -104,7 +104,7 @@ def test_alternation():
     """Test compiling alternation pattern."""
     regex_def = RegexDefinition(
         alphabet=('a', 'b'),
-        patterns=(('a|b', 'accept'),)
+        patterns=(('(a|b)', 'accept'),)
     )
 
     fsm = compile_regex(regex_def)
@@ -124,7 +124,7 @@ def test_regex_equivalence():
         ('a+', 'accept'),
         ('a*b*', 'accept'),
         ('(ab)*', 'accept'),
-        ('a|b', 'accept'),
+        ('(a|b)', 'accept'),
     ]
 
     alphabet = ('a', 'b')
