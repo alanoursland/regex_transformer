@@ -57,10 +57,13 @@ def construct_qkv_from_fsm(fsm: FSM) -> Dict[str, List]:
 
 
 def matrix_vector_mult(matrix: List[List[float]], vector: List[float]) -> List[float]:
-    """Multiply matrix by vector."""
-    result = []
-    for row in matrix:
-        result.append(sum(row[i] * vector[i] for i in range(len(vector))))
+    """Multiply matrix by vector (result[i] = sum_j matrix[j][i] * vector[j])."""
+    n_rows = len(matrix)
+    n_cols = len(matrix[0]) if n_rows > 0 else 0
+    result = [0.0] * n_cols
+    for j in range(n_rows):
+        for i in range(n_cols):
+            result[i] += matrix[j][i] * vector[j]
     return result
 
 
