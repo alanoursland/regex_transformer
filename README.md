@@ -23,9 +23,9 @@ Train single-layer transformers on regex patterns to analyze learned FSM structu
 ## Quick Start
 
 ```python
-from src.fsm.regex_def import RegexDefinition
-from src.model.config import ModelConfig
-from src.train.loop import train_one_experiment, TrainConfig
+from fsm.regex_def import RegexDefinition
+from model.config import ModelConfig
+from train.loop import train_one_experiment, TrainConfig
 from pathlib import Path
 
 # Define regex

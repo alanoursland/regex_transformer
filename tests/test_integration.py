@@ -4,16 +4,16 @@ import torch
 import tempfile
 from pathlib import Path
 
-from src.fsm.regex_def import RegexDefinition
-from src.fsm.compile import compile_regex
-from src.data.generator import generate_corpus, GenConfig
-from src.data.tokenizer import Vocab
-from src.data.dataset import FsmDataset
-from src.data.loader import make_dataloaders
-from src.model.config import ModelConfig
-from src.model.transformer import RegexTransformer
-from src.train.loop import train_one_experiment, TrainConfig
-from src.eval.metrics import compute_metrics
+from fsm.regex_def import RegexDefinition
+from fsm.compile import compile_regex
+from data.generator import generate_corpus, GenConfig
+from data.tokenizer import Vocab
+from data.dataset import FsmDataset
+from data.loader import make_dataloaders
+from model.config import ModelConfig
+from model.transformer import RegexTransformer
+from train.loop import train_one_experiment, TrainConfig
+from eval.metrics import compute_metrics
 
 
 def test_end_to_end_pipeline():
@@ -112,7 +112,7 @@ def test_overfit_micro_dataset():
             
             outputs = model(tokens, attn_mask)
             
-            from src.train.losses import compute_multi_task_loss
+            from train.losses import compute_multi_task_loss
             losses = compute_multi_task_loss(outputs, batch)
             
             optimizer.zero_grad()
