@@ -164,7 +164,7 @@ def train_model(args):
     )
 
     print(f"  Generated: {len(samples)} samples")
-    print(f"  Class distribution: {dict(report['class_distribution'])}")
+    print(f"  Class distribution: {dict(report.class_histogram)}")
 
     # Split data (80/10/10)
     n_train = int(0.8 * len(samples))
