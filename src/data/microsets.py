@@ -3,9 +3,9 @@
 from typing import List, Dict, Tuple
 import numpy as np
 
-from ..fsm.dfa import FSM
-from ..fsm.regex_def import RegexDefinition
-from ..fsm.compile import compile_regex
+from fsm.dfa import FSM
+from fsm.regex_def import RegexDefinition
+from fsm.compile import compile_regex
 from .generator import GenConfig, generate_corpus
 
 

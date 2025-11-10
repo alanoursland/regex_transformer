@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple, Dict, Literal
 from collections import Counter, defaultdict
 import numpy as np
 
-from ..fsm.dfa import FSM
+from fsm.dfa import FSM
 from .feasibility import can_reach_tables, feasible
 from .quotas import QuotaManager
 from .telemetry import build_report, DataReport

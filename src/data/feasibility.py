@@ -7,7 +7,7 @@ class within exactly t steps.
 import numpy as np
 from typing import Tuple
 
-from ..fsm.dfa import FSM
+from fsm.dfa import FSM
 
 
 def can_reach_tables(fsm: FSM, L_max: int) -> np.ndarray:

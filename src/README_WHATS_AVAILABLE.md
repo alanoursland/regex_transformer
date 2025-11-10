@@ -60,7 +60,7 @@ Verify core FSM functionality:
 
 ```bash
 cd /path/to/regex_transformer
-python -m src.fsm.smoke_test
+python -m fsm.smoke_test
 ```
 
 **Tests:**

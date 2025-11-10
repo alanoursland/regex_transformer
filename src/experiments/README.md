@@ -10,12 +10,12 @@ Trains a single-layer transformer to learn FSM behavior from a regex pattern.
 
 **Basic Usage:**
 ```bash
-python -m src.experiments.train_model --pattern "a+" --epochs 50
+python -m experiments.train_model --pattern "a+" --epochs 50
 ```
 
 **Full Options:**
 ```bash
-python -m src.experiments.train_model \
+python -m experiments.train_model \
   --pattern "a*b*" \
   --alphabet a b \
   --n_samples 5000 \
@@ -48,12 +48,12 @@ Results are saved in `src/results/{pattern}/{timestamp}/`:
 
 Train on simple pattern:
 ```bash
-python -m src.experiments.train_model --pattern "a+" --epochs 50
+python -m experiments.train_model --pattern "a+" --epochs 50
 ```
 
 Train on more complex pattern with GPU:
 ```bash
-python -m src.experiments.train_model \
+python -m experiments.train_model \
   --pattern "(a|b)+" \
   --n_samples 10000 \
   --epochs 100 \
@@ -62,7 +62,7 @@ python -m src.experiments.train_model \
 
 Train with specific architecture:
 ```bash
-python -m src.experiments.train_model \
+python -m experiments.train_model \
   --pattern "a*b*" \
   --d_model 128 \
   --n_heads 2 \
@@ -77,12 +77,12 @@ Loads a trained model and compares its learned attention weights to the theoreti
 
 **Basic Usage:**
 ```bash
-python -m src.experiments.compare_weights src/results/aplus/20241110_153000
+python -m experiments.compare_weights src/results/aplus/20241110_153000
 ```
 
 **Full Options:**
 ```bash
-python -m src.experiments.compare_weights \
+python -m experiments.compare_weights \
   src/results/aplus/20241110_153000 \
   --checkpoint best.pt \
   --visualize_heads 0 1 \
@@ -119,19 +119,19 @@ Also saves `weight_comparison.json` in the results directory with:
 
 Basic comparison:
 ```bash
-python -m src.experiments.compare_weights src/results/aplus/20241110_153000
+python -m experiments.compare_weights src/results/aplus/20241110_153000
 ```
 
 Compare with visualization:
 ```bash
-python -m src.experiments.compare_weights \
+python -m experiments.compare_weights \
   src/results/aplus/20241110_153000 \
   --visualize_heads 0 1
 ```
 
 Test specific strings:
 ```bash
-python -m src.experiments.compare_weights \
+python -m experiments.compare_weights \
   src/results/astarb/20241110_154500 \
   --test_strings "" a b aa bb ab aabb ba
 ```
@@ -144,7 +144,7 @@ Tests that data generation works correctly (requires numpy).
 
 **Usage:**
 ```bash
-python -m src.experiments.test_data_generation
+python -m experiments.test_data_generation
 ```
 
 This verifies:
@@ -183,7 +183,7 @@ src/results/
 
 1. **Train a model:**
    ```bash
-   python -m src.experiments.train_model --pattern "a+" --epochs 50 --device cuda
+   python -m experiments.train_model --pattern "a+" --epochs 50 --device cuda
    ```
 
 2. **Note the results path** (printed at end of training):
@@ -193,7 +193,7 @@ src/results/
 
 3. **Compare weights:**
    ```bash
-   python -m src.experiments.compare_weights src/results/aplus/20241110_153000
+   python -m experiments.compare_weights src/results/aplus/20241110_153000
    ```
 
 4. **Analyze results:**

@@ -6,8 +6,8 @@ This script trains a single-layer transformer to learn FSM behavior from a regex
 Results are saved in a timestamped directory with full reproducibility metadata.
 
 Usage:
-    python -m src.experiments.train_model --pattern "a+" --epochs 50
-    python -m src.experiments.train_model --pattern "a*b*" --n_samples 5000 --batch_size 64
+    python -m experiments.train_model --pattern "a+" --epochs 50
+    python -m experiments.train_model --pattern "a*b*" --n_samples 5000 --batch_size 64
 """
 
 import argparse
@@ -444,7 +444,7 @@ def main():
     results_dir = train_model(args)
 
     print(f"\nDone! Use this path for weight comparison:")
-    print(f"  python -m src.experiments.compare_weights {results_dir}")
+    print(f"  python -m experiments.compare_weights {results_dir}")
 
 
 if __name__ == "__main__":

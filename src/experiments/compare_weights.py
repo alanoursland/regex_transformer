@@ -6,8 +6,8 @@ This script loads a trained model and compares its learned attention weights
 to the theoretically constructed QKV matrices from the FSM.
 
 Usage:
-    python -m src.experiments.compare_weights results/aplus/20241110_153000
-    python -m src.experiments.compare_weights results/aplus/20241110_153000 --checkpoint best.pt
+    python -m experiments.compare_weights results/aplus/20241110_153000
+    python -m experiments.compare_weights results/aplus/20241110_153000 --checkpoint best.pt
 """
 
 import argparse

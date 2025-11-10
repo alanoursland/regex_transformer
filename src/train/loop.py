@@ -5,18 +5,18 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
 
-from ..fsm.regex_def import RegexDefinition
-from ..fsm.compile import compile_regex
-from ..data.generator import generate_corpus, GenConfig
-from ..data.tokenizer import Vocab
-from ..data.dataset import FsmDataset
-from ..data.loader import make_dataloaders
-from ..model.config import ModelConfig
-from ..model.transformer import RegexTransformer
+from fsm.regex_def import RegexDefinition
+from fsm.compile import compile_regex
+from data.generator import generate_corpus, GenConfig
+from data.tokenizer import Vocab
+from data.dataset import FsmDataset
+from data.loader import make_dataloaders
+from model.config import ModelConfig
+from model.transformer import RegexTransformer
 from .losses import compute_multi_task_loss
 from .optim import build_optimizer, clip_gradients
 from .checkpoint import save_checkpoint
-from ..eval.metrics import compute_metrics as eval_compute_metrics
+from eval.metrics import compute_metrics as eval_compute_metrics
 
 @dataclass
 class TrainConfig:

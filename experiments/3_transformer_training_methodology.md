@@ -200,13 +200,7 @@ Beyond weight comparison, test if learned model matches FSM behavior:
 
 **Usage:**
 ```bash
-python -m src.experiments.train_model \
-  --pattern "a+" \
-  --epochs 50 \
-  --n_samples 2000 \
-  --batch_size 32 \
-  --device cuda \
-  --seed 42
+python -m experiments.train_model --pattern "a+" --epochs 50 --n_samples 2000 --batch_size 32 --device cuda --seed 42
 ```
 
 **Full Parameter Reference:**
@@ -248,7 +242,7 @@ Results saved to `src/results/{pattern}/{timestamp}/`:
 
 **Usage:**
 ```bash
-python -m src.experiments.compare_weights \
+python -m experiments.compare_weights \
   src/results/aplus/20241110_153000 \
   --checkpoint best.pt \
   --visualize_heads 0 1 \
@@ -309,13 +303,13 @@ Saved to `weight_comparison.json`:
 **Usage:**
 ```bash
 # List all experiments
-python -m src.experiments.list_results
+python -m experiments.list_results
 
 # Filter by pattern
-python -m src.experiments.list_results --pattern aplus
+python -m experiments.list_results --pattern aplus
 
 # Find best result by metric
-python -m src.experiments.list_results --best --metric class_acc
+python -m experiments.list_results --best --metric class_acc
 ```
 
 ## 4. Replication Instructions
@@ -344,7 +338,7 @@ python -c "import torch; print(torch.cuda.is_available())"
 
 **Train on simple pattern:**
 ```bash
-python -m src.experiments.train_model --pattern "a+" --epochs 50
+python -m experiments.train_model --pattern "a+" --epochs 50
 ```
 
 **Monitor training:**
@@ -359,7 +353,7 @@ Results saved to: src/results/aplus/20241110_153000
 
 **Compare weights:**
 ```bash
-python -m src.experiments.compare_weights src/results/aplus/20241110_153000
+python -m experiments.compare_weights src/results/aplus/20241110_153000
 ```
 
 ### 4.3 Comprehensive Experiment Suite
@@ -367,23 +361,23 @@ python -m src.experiments.compare_weights src/results/aplus/20241110_153000
 **Test patterns:**
 ```bash
 # Simple repetition
-python -m src.experiments.train_model --pattern "a+" --epochs 50 --device cuda
+python -m experiments.train_model --pattern "a+" --epochs 50 --device cuda
 
 # Kleene star concatenation
-python -m src.experiments.train_model --pattern "a*b*" --epochs 50 --device cuda
+python -m experiments.train_model --pattern "a*b*" --epochs 50 --device cuda
 
 # Alternation
-python -m src.experiments.train_model --pattern "(a|b)+" --epochs 50 --device cuda
+python -m experiments.train_model --pattern "(a|b)+" --epochs 50 --device cuda
 
 # Exact sequence
-python -m src.experiments.train_model --pattern "ab" --epochs 50 --device cuda
+python -m experiments.train_model --pattern "ab" --epochs 50 --device cuda
 ```
 
 **Hyperparameter sweep:**
 ```bash
 # Vary model size
 for d_model in 32 64 128; do
-  python -m src.experiments.train_model \
+  python -m experiments.train_model \
     --pattern "a+" \
     --d_model $d_model \
     --epochs 50 \
@@ -392,7 +386,7 @@ done
 
 # Vary number of heads
 for n_heads in 2 4 8; do
-  python -m src.experiments.train_model \
+  python -m experiments.train_model \
     --pattern "(a|b)+" \
     --n_heads $n_heads \
     --epochs 50 \
@@ -401,7 +395,7 @@ done
 
 # Vary dataset size
 for n_samples in 1000 2000 5000 10000; do
-  python -m src.experiments.train_model \
+  python -m experiments.train_model \
     --pattern "a*b*" \
     --n_samples $n_samples \
     --epochs 50 \
@@ -413,7 +407,7 @@ done
 
 **1. Train model:**
 ```bash
-python -m src.experiments.train_model \
+python -m experiments.train_model \
   --pattern "a+" \
   --epochs 100 \
   --n_samples 5000 \
@@ -424,7 +418,7 @@ Note the output path: `src/results/aplus/20241110_153000`
 
 **2. Compare weights:**
 ```bash
-python -m src.experiments.compare_weights \
+python -m experiments.compare_weights \
   src/results/aplus/20241110_153000 \
   --visualize_heads 0 1
 ```
@@ -437,7 +431,7 @@ cat src/results/aplus/20241110_153000/weight_comparison.json
 
 **4. Find best result:**
 ```bash
-python -m src.experiments.list_results --best --metric class_acc
+python -m experiments.list_results --best --metric class_acc
 ```
 
 ## 5. Expected Results and Interpretation

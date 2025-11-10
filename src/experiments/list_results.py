@@ -3,8 +3,8 @@
 List and browse saved experiment results.
 
 Usage:
-    python -m src.experiments.list_results
-    python -m src.experiments.list_results --pattern aplus
+    python -m experiments.list_results
+    python -m experiments.list_results --pattern aplus
 """
 
 import argparse

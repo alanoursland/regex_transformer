@@ -141,7 +141,7 @@ def main():
         print("✓ All tests passed!")
         print("\nData generation is working correctly.")
         print("You can now run the training script:")
-        print("  python -m src.experiments.train_model --pattern 'a+' --epochs 10")
+        print("  python -m experiments.train_model --pattern 'a+' --epochs 10")
         return 0
     else:
         print("✗ Some tests failed")

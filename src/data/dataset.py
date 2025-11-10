@@ -4,7 +4,7 @@ from typing import List, Dict, Literal, Optional
 import torch
 from torch.utils.data import Dataset
 
-from ..fsm.dfa import FSM
+from fsm.dfa import FSM
 
 
 class FsmDataset(Dataset):
