@@ -15,5 +15,6 @@ python -m regex_compilation_demo
 
 # Test FSM to QKV Construction
 ```
-
+python -m test_construction
 ```
+
