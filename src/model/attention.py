@@ -39,11 +39,10 @@ class MultiHeadAttention(nn.Module):
         # Apply padding mask if provided
         if attn_mask is not None:
             # attn_mask: (B, T), True for valid positions
-            # Convert to (B, 1, 1, T) and broadcast
+            # Mask out attending TO padding positions
             pad_mask = ~attn_mask.unsqueeze(1).unsqueeze(2)  # (B, 1, 1, T)
             scores = scores.masked_fill(pad_mask, float('-inf'))
-            # Also mask out attending FROM padding positions
-            scores = scores.masked_fill(pad_mask.transpose(-2, -1), float('-inf'))
+            # Don't mask FROM - let padding positions attend (outputs will be ignored anyway)
         
         # Softmax and dropout
         attn_weights = F.softmax(scores, dim=-1)

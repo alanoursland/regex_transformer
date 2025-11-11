@@ -34,7 +34,13 @@ def compute_multi_task_loss(
         reduction='none'
     ).reshape(B, T)
     next_loss = (next_loss * loss_mask).sum() / loss_mask.sum().clamp(min=1)
-    
+
+    # DEBUG
+    if torch.isnan(next_loss):
+        print(f"WARNING: next_loss is NaN!")
+        print(f"  loss_mask sum: {loss_mask.sum().item()}")
+        print(f"  next_logits range: [{next_logits.min():.2f}, {next_logits.max():.2f}]")
+
     # Class loss (masked, exclude last position)
     class_logits = outputs["class_logits"][:, :-1, :]  # (B, T-1, num_classes)
     class_targets = batch["state_classes"][:, 1:T]  # (B, T-1) - skip start state
@@ -47,6 +53,11 @@ def compute_multi_task_loss(
     ).reshape(B, T-1)
     class_loss = (class_loss * class_mask).sum() / class_mask.sum().clamp(min=1)
     
+    # DEBUG
+    if torch.isnan(class_loss):
+        print(f"WARNING: class_loss is NaN!")
+        print(f"  class_mask sum: {class_mask.sum().item()}")
+
     # Total loss
     total_loss = lambda_next * next_loss + lambda_class * class_loss
     

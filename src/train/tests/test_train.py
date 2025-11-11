@@ -4,8 +4,8 @@ import torch
 import tempfile
 from pathlib import Path
 
-from ...fsm.regex_def import RegexDefinition
-from ...model.config import ModelConfig
+from fsm.regex_def import RegexDefinition
+from model.config import ModelConfig
 from ..loop import TrainConfig, train_one_experiment, set_seed, evaluate
 from ..losses import compute_multi_task_loss
 

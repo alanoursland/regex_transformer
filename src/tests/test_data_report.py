@@ -151,7 +151,7 @@ def test_train_model_usage_pattern():
     )
 
     # This is what the buggy code tried to do:
-    # print(f"  Class distribution: {dict(report['class_distribution'])}")
+    # print(f"  Class distribution: {dict(report.class_histogram)}")
     # Should raise TypeError
 
     if HAS_PYTEST:

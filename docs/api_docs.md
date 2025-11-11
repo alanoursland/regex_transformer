@@ -285,6 +285,19 @@ dataloaders = make_dataloaders(
     seed=42
 )
 
+# DEBUG: Inspect first batch
+dataloader_iter = iter(dataloaders["train"])
+batch = next(dataloader_iter)
+
+print("Batch inspection:")
+print(f"  tokens shape: {batch['tokens'].shape}")
+print(f"  next_tokens shape: {batch['next_tokens'].shape}")
+print(f"  loss_mask shape: {batch['loss_mask'].shape}")
+print(f"  loss_mask sum per sample: {batch['loss_mask'].sum(dim=1)}")
+print(f"  Sample tokens[0]: {batch['tokens'][0]}")
+print(f"  Sample next_tokens[0]: {batch['next_tokens'][0]}")
+print(f"  Sample loss_mask[0]: {batch['loss_mask'][0]}")
+
 # Use in training loop
 for batch in dataloaders["train"]:
     tokens = batch["tokens"]  # Shape: [batch_size, seq_len]

@@ -3,8 +3,8 @@
 import pytest
 import numpy as np
 
-from ...fsm.regex_def import RegexDefinition
-from ...fsm.compile import compile_regex
+from fsm.regex_def import RegexDefinition
+from fsm.compile import compile_regex
 from ..generator import GenConfig, generate_corpus, sample_target
 from ..feasibility import can_reach_tables
 

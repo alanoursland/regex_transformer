@@ -16,6 +16,9 @@ def save_checkpoint(path: Path, model, optimizer, epoch, step, metrics, seed):
         'seed': seed,
     }, tmp_path)
     
+    # Windows-compatible rename: remove existing file first
+    if path.exists():
+        path.unlink()
     tmp_path.rename(path)
 
 def load_checkpoint(path: Path, model, optimizer=None):

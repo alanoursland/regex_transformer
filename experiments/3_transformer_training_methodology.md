@@ -200,7 +200,7 @@ Beyond weight comparison, test if learned model matches FSM behavior:
 
 **Usage:**
 ```bash
-python -m experiments.train_model --pattern "a+" --epochs 50 --n_samples 2000 --batch_size 32 --device cuda --seed 42
+python -m experiments.train_model --pattern "a+" --epochs 50 --n_samples 2000 --batch_size 32 --device cuda --seed 42 --train_classes accept --lambda_class 0.0
 ```
 
 **Full Parameter Reference:**

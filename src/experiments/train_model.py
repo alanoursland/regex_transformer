@@ -15,6 +15,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Tuple
 
 import torch
 
@@ -124,6 +125,50 @@ def save_fsm_construction(results_dir: Path, fsm):
         'alphabet': fsm.alphabet,
     }, results_dir / "fsm_construction.pt")
 
+def save_training_data(
+    results_dir: Path,
+    samples: list,
+    alphabet: Tuple[str, ...],
+    report,
+    fsm
+):
+    """Save training data for inspection and reproducibility."""
+    
+    # Convert token IDs to strings for readability
+    def tokens_to_string(tokens):
+        return ''.join(alphabet[t] for t in tokens)
+    
+    # Classify each sample
+    def classify_sample(tokens):
+        states = fsm.trace(tokens)
+        return fsm.classify_name(states[-1])
+    
+    # Prepare data
+    data = {
+        'samples': [
+            {
+                'tokens': sample,
+                'string': tokens_to_string(sample),
+                'length': len(sample),
+                'class': classify_sample(sample)
+            }
+            for sample in samples
+        ],
+        'statistics': {
+            'total_samples': len(samples),
+            'class_distribution': dict(report.class_histogram),
+            'length_distribution': dict(report.length_histogram) if hasattr(report, 'length_histogram') else {},
+            'min_length': min(len(s) for s in samples) if samples else 0,
+            'max_length': max(len(s) for s in samples) if samples else 0,
+            'avg_length': sum(len(s) for s in samples) / len(samples) if samples else 0,
+        }
+    }
+    
+    # Save as JSON
+    with open(results_dir / "training_data.json", 'w') as f:
+        json.dump(data, f, indent=2)
+    
+    print(f"  Saved training data: training_data.json")
 
 def train_model(args):
     """Main training function."""
@@ -147,13 +192,19 @@ def train_model(args):
     print(f"  States: {fsm.states}")
     print(f"  Classes: {fsm.classes}")
     print(f"  Alphabet: {fsm.alphabet}")
+    vocab = Vocab.from_alphabet(alphabet)
 
     # Save FSM construction baseline
     save_fsm_construction(results_dir, fsm)
 
     # Generate data
     print(f"\nGenerating {args.n_samples} samples...")
-    p_class = {cls: 1.0/len(fsm.classes) for cls in fsm.classes}
+    if args.train_classes:
+        # Only specified classes
+        p_class = {cls: 1.0/len(args.train_classes) for cls in args.train_classes}
+    else:
+        # All classes (default behavior)
+        p_class = {cls: 1.0/len(fsm.classes) for cls in fsm.classes}
     gen_cfg = GenConfig(
         L_min=args.min_len,
         L_max=args.max_len,
@@ -165,18 +216,20 @@ def train_model(args):
 
     print(f"  Generated: {len(samples)} samples")
     print(f"  Class distribution: {dict(report.class_histogram)}")
+    
+    # Save training data for inspection
+    save_training_data(results_dir, samples, alphabet, report, fsm)
 
     # Split data (80/10/10)
     n_train = int(0.8 * len(samples))
     n_val = int(0.1 * len(samples))
 
     datasets = {
-        "train": FsmDataset(fsm, samples[:n_train], "train"),
-        "val": FsmDataset(fsm, samples[n_train:n_train+n_val], "val"),
-        "test": FsmDataset(fsm, samples[n_train+n_val:], "test"),
+        "train": FsmDataset(fsm, samples[:n_train], "train", eos_id=vocab.eos_id),
+        "val": FsmDataset(fsm, samples[n_train:n_train+n_val], "val", eos_id=vocab.eos_id),
+        "test": FsmDataset(fsm, samples[n_train+n_val:], "test", eos_id=vocab.eos_id),
     }
 
-    vocab = Vocab.from_alphabet(alphabet)
     dataloaders = make_dataloaders(
         datasets, vocab, args.batch_size, args.seed
     )
@@ -221,15 +274,25 @@ def train_model(args):
         train_batches = 0
 
         for batch in dataloaders["train"]:
+            # DEBUG: Check first batch only
+            if epoch == 0 and train_batches == 0:
+                print("\n=== DEBUG: First batch ===")
+                print(f"loss_mask sum: {batch['loss_mask'].sum().item()} / {batch['loss_mask'].numel()}")
+                print(f"Sample loss_mask[0]: {batch['loss_mask'][0]}")
+                print(f"Sample tokens[0]: {batch['tokens'][0]}")
+                print(f"Sample next_tokens[0]: {batch['next_tokens'][0]}")
+
+
             tokens = batch["tokens"].to(device)
             attn_mask = batch["attn_mask"].to(device)
 
             outputs = model(tokens, attn_mask)
             losses = compute_multi_task_loss(
                 outputs,
-                {k: v.to(device) for k, v in batch.items()}
+                {k: v.to(device) for k, v in batch.items()},
+                lambda_next=args.lambda_next,
+                lambda_class=args.lambda_class
             )
-
             optimizer.zero_grad()
             losses["loss"].backward()
             clip_gradients(model, max_norm=1.0)
@@ -422,6 +485,27 @@ def main():
         type=int,
         default=5,
         help="Log every N epochs"
+    )
+
+    # Training objectives
+    parser.add_argument(
+        "--lambda_next",
+        type=float,
+        default=1.0,
+        help="Weight for next-token loss"
+    )
+    parser.add_argument(
+        "--lambda_class",
+        type=float,
+        default=0.5,
+        help="Weight for classification loss"
+    )
+    parser.add_argument(
+        "--train_classes",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Which classes to include in training (e.g., --train_classes accept)"
     )
 
     # System

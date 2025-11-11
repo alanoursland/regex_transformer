@@ -55,12 +55,10 @@ def collate_batch(
         # Attention mask: True for valid positions
         attn_mask_batch[i, :seq_len] = True
 
-        # Loss mask: True for valid positions, but False for last token
-        # (since we don't predict beyond EOS)
-        if seq_len > 0:
-            loss_mask_batch[i, : seq_len - 1] = True
-            # Last position gets False (no loss on predicting after EOS)
-            loss_mask_batch[i, seq_len - 1] = False
+        # Loss mask: True only where a next-token target exists (exclude last position)
+        if seq_len > 1:
+            loss_mask_batch[i, :seq_len - 1] = True
+        # if seq_len is 0 or 1, leave loss_mask all False
 
     return {
         "tokens": tokens_batch,

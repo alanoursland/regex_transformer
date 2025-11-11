@@ -3,9 +3,9 @@
 import pytest
 import torch
 
-from ...fsm.regex_def import RegexDefinition
-from ...fsm.compile import compile_regex
-from dataset import FsmDataset
+from fsm.regex_def import RegexDefinition
+from fsm.compile import compile_regex
+from data.dataset import FsmDataset
 from ..collate import collate_batch
 
 

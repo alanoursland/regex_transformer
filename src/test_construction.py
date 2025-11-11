@@ -11,9 +11,9 @@ from fsm.compile import compile_regex
 from model.fsm_construction import construct_qkv_from_fsm, fsm_forward_pass
 
 
-def test_equivalence(fsm, test_strings, verbose=True):
+def assert_equivalence(finite_state_machine, test_strings, verbose=True):
     """Test if FSM and QKV construction produce identical results."""
-    qkv = construct_qkv_from_fsm(fsm)
+    qkv = construct_qkv_from_fsm(finite_state_machine)
     
     all_passed = True
     
@@ -24,7 +24,7 @@ def test_equivalence(fsm, test_strings, verbose=True):
         fsm_final_class = fsm.classify_name(fsm_states[-1])
         
         # QKV execution
-        qkv_encodings, qkv_states = fsm_forward_pass(qkv, tokens, fsm)
+        qkv_encodings, qkv_states = fsm_forward_pass(qkv, tokens, finite_state_machine)
         qkv_final_class = fsm.classify_name(qkv_states[-1])
         
         # Compare
@@ -60,10 +60,10 @@ def main():
         alphabet=("a", "b"),
         patterns=(("a+", "accept"),)
     )
-    fsm = compile_regex(regex_def)
+    finite_state_machine = compile_regex(regex_def)
     
     test_strings = ["", "a", "aa", "aaa", "b", "ab", "ba"]
-    passed = test_equivalence(fsm, test_strings, verbose=True)
+    passed = assert_equivalence(finite_state_machine, test_strings, verbose=True)
     
     print(f"Result: {'PASS' if passed else 'FAIL'}")
     print()
@@ -75,10 +75,10 @@ def main():
         alphabet=("a", "b"),
         patterns=(("a*b*", "accept"),)
     )
-    fsm = compile_regex(regex_def)
+    finite_state_machine = compile_regex(regex_def)
     
     test_strings = ["", "a", "b", "aa", "bb", "ab", "aabb", "ba"]
-    passed2 = test_equivalence(fsm, test_strings, verbose=True)
+    passed2 = assert_equivalence(finite_state_machine, test_strings, verbose=True)
     
     print(f"Result: {'PASS' if passed2 else 'FAIL'}")
     print()
@@ -90,10 +90,10 @@ def main():
         alphabet=("a", "b"),
         patterns=(("ab", "accept"),)
     )
-    fsm = compile_regex(regex_def)
+    finite_state_machine = compile_regex(regex_def)
     
     test_strings = ["", "a", "b", "ab", "ba", "aba"]
-    passed3 = test_equivalence(fsm, test_strings, verbose=True)
+    passed3 = assert_equivalence(finite_state_machine, test_strings, verbose=True)
     
     print(f"Result: {'PASS' if passed3 else 'FAIL'}")
     print()

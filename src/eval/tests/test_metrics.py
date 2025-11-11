@@ -2,13 +2,13 @@
 import pytest
 import torch
 
-from ...fsm.regex_def import RegexDefinition
-from ...fsm.compile import compile_regex
-from ...data.dataset import FsmDataset
-from ...data.tokenizer import Vocab
-from ...data.loader import make_dataloaders
-from ...model.config import ModelConfig
-from ...model.transformer import RegexTransformer
+from fsm.regex_def import RegexDefinition
+from fsm.compile import compile_regex
+from data.dataset import FsmDataset
+from data.tokenizer import Vocab
+from data.loader import make_dataloaders
+from model.config import ModelConfig
+from model.transformer import RegexTransformer
 from ..metrics import compute_metrics
 from ..ood import length_ood_split, compute_ood_gap
 
